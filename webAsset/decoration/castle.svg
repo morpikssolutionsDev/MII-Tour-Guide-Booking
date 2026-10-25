@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="178 -224 364 512" width="364" height="512">
+<g id="castle">
+  <rect x="226" y="16" width="270" height="268" fill="#EBDFCB"/>
+  <path d="M226 16 h14 v-14 h-14 Z M250 16 h14 v-14 h-14 Z M274 16 h14 v-14 h-14 Z M298 16 h14 v-14 h-14 Z M322 16 h14 v-14 h-14 Z M346 16 h14 v-14 h-14 Z M370 16 h14 v-14 h-14 Z M394 16 h14 v-14 h-14 Z M418 16 h14 v-14 h-14 Z M442 16 h14 v-14 h-14 Z M466 16 h14 v-14 h-14 Z " fill="#EBDFCB"/>
+  <rect x="226" y="16" width="270" height="8" fill="#DEC8A6"/>
+  <path d="M282 168 V139 A11 11 0 0 1 304 139 V168 Z M418 168 V139 A11 11 0 0 1 440 139 V168 Z M282 236 V207 A11 11 0 0 1 304 207 V236 Z M418 236 V207 A11 11 0 0 1 440 207 V236 Z" fill="#245B66"/>
+  <path d="M330 284 V230 A30 30 0 0 1 390 230 V284 Z" fill="#245B66"/>
+  <rect x="306" y="-34" width="108" height="318" fill="#EBDFCB"/>
+  <rect x="384" y="-34" width="30" height="318" fill="#DEC8A6"/>
+  <path d="M306 -34 h14 v-14 h-14 Z M329.5 -34 h14 v-14 h-14 Z M353 -34 h14 v-14 h-14 Z M376.5 -34 h14 v-14 h-14 Z M400 -34 h14 v-14 h-14 Z " fill="#EBDFCB"/>
+  <path d="M320 34 V12 A8 8 0 0 1 336 12 V34 Z M384 34 V12 A8 8 0 0 1 400 12 V34 Z" fill="#245B66"/>
+  <g id="castle-tower-left">
+    <rect x="190" y="-46" width="58" height="330" fill="#EBDFCB"/>
+    <rect x="231.76" y="-46" width="16.240000000000002" height="330" fill="#DEC8A6"/>
+    <path d="M182 -46 L219 -132 L256 -46 Z" fill="#3D8A99"/>
+    <path d="M219 -132 L256 -46 L229.44 -46 Z" fill="#245B66"/>
+    <rect x="182" y="-46" width="74" height="6" fill="#E8913F"/>
+    <path d="M212 4 V-15 A7 7 0 0 1 226 -15 V4 Z" fill="#245B66"/>
+    <g transform="translate(219 -132)"><g class="castle-flag">
+      <path d="M0 0 V-22" stroke="#222B30" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M1 -22 L18 -17 L1 -12 Z" fill="#EC1B24"/>
+    </g></g>
+  </g>
+  <g id="castle-tower-right">
+    <rect x="472" y="-46" width="58" height="330" fill="#EBDFCB"/>
+    <rect x="513.76" y="-46" width="16.240000000000002" height="330" fill="#DEC8A6"/>
+    <path d="M464 -46 L501 -132 L538 -46 Z" fill="#3D8A99"/>
+    <path d="M501 -132 L538 -46 L511.44 -46 Z" fill="#245B66"/>
+    <rect x="464" y="-46" width="74" height="6" fill="#E8913F"/>
+    <path d="M494 4 V-15 A7 7 0 0 1 508 -15 V4 Z" fill="#245B66"/>
+    <g transform="translate(501 -132)"><g class="castle-flag">
+      <path d="M0 0 V-22" stroke="#222B30" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M1 -22 L18 -17 L1 -12 Z" fill="#EC1B24"/>
+    </g></g>
+  </g>
+  <g id="castle-tower-center">
+    <rect x="332" y="-96" width="56" height="380" fill="#EBDFCB"/>
+    <rect x="372.32" y="-96" width="15.680000000000001" height="380" fill="#DEC8A6"/>
+    <path d="M324 -96 L360 -196 L396 -96 Z" fill="#3D8A99"/>
+    <path d="M360 -196 L396 -96 L370.08 -96 Z" fill="#245B66"/>
+    <rect x="324" y="-96" width="72" height="6" fill="#E8913F"/>
+    <path d="M353 -46 V-65 A7 7 0 0 1 367 -65 V-46 Z" fill="#245B66"/>
+    <g transform="translate(360 -196)"><g class="castle-flag">
+      <path d="M0 0 V-22" stroke="#222B30" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M1 -22 L18 -17 L1 -12 Z" fill="#EC1B24"/>
+    </g></g>
+  </g>
+</g>
+</svg>

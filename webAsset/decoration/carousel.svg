@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="598 -58 156 348" width="156" height="348">
+<g id="carousel">
+  <defs><clipPath id="carousel-roof-clip"><path d="M676 -34 C690 0 716 26 746 36 L606 36 C636 26 662 0 676 -34 Z"/></clipPath></defs>
+  <rect x="664" y="44" width="24" height="28" fill="#CB781A"/>
+  <g id="carousel-canopy">
+    <path d="M676 -34 C690 0 716 26 746 36 L606 36 C636 26 662 0 676 -34 Z" fill="#FBF8F3"/>
+    <path d="M676 -34 L606 36 L620 36 Z M676 -34 L634 36 L648 36 Z M676 -34 L662 36 L676 36 Z M676 -34 L690 36 L704 36 Z M676 -34 L718 36 L732 36 Z " fill="#3D8A99" clip-path="url(#carousel-roof-clip)"/>
+    <path d="M676 -34 C690 0 716 26 746 36 L606 36 C636 26 662 0 676 -34 Z" fill="none" stroke="#245B66" stroke-width="2"/>
+    <path d="M606 48 A7 6.3 0 0 0 620 48 Z M620 48 A7 6.3 0 0 0 634 48 Z M634 48 A7 6.3 0 0 0 648 48 Z M648 48 A7 6.3 0 0 0 662 48 Z M662 48 A7 6.3 0 0 0 676 48 Z M676 48 A7 6.3 0 0 0 690 48 Z M690 48 A7 6.3 0 0 0 704 48 Z M704 48 A7 6.3 0 0 0 718 48 Z M718 48 A7 6.3 0 0 0 732 48 Z M732 48 A7 6.3 0 0 0 746 48 Z " fill="#3D8A99"/>
+    <rect x="602" y="36" width="148" height="12" rx="3" fill="#E8913F"/>
+    <path d="M676 -34 V-52" stroke="#CB781A" stroke-width="3"/>
+    <circle cx="676" cy="-36" r="6" fill="#E8913F"/>
+    <g transform="translate(676 -52)"><g id="carousel-flag">
+      <path d="M1 0 L20 6 L1 12 Z" fill="#EC1B24"/>
+    </g></g>
+  </g>
+  <path id="carousel-pole" d="M676 60 V284" stroke="#CB781A" stroke-width="5"/>
+  <g transform="translate(676 166) scale(1.35)">
+    <g id="carousel-horse">
+      <path d="M-16 6 L-30 14 L-38 12 M-8 9 L-14 22 L-22 26" fill="none" stroke="#CB781A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M-26 -4 C-38 -2 -44 8 -40 22 C-36 14 -32 8 -24 6 Z" fill="#3D8A99"/>
+      <ellipse cx="0" cy="0" rx="27" ry="13" fill="#E8913F"/>
+      <path d="M14 -6 C17 -20 22 -30 31 -34 C37 -36 45 -30 47 -23 C48 -19 44 -17 39 -19 C34 -17 30 -12 27 -1 Z" fill="#E8913F"/>
+      <path d="M29 -34 L28 -43 L35 -35 Z" fill="#E8913F"/>
+      <path d="M30 -35 C22 -32 16 -22 13 -8 L19 -6 C21 -18 25 -26 31 -30 Z" fill="#3D8A99"/>
+      <circle cx="37" cy="-26" r="2.2" fill="#222B30"/>
+      <path d="M18 4 L32 4 L34 14 M12 8 L24 14 L24 24" fill="none" stroke="#E8913F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M-12 -12 C-8 -2 8 -2 12 -12 L12 4 C6 10 -6 10 -12 4 Z" fill="#EC1B24"/>
+      <path d="M-10 -13 C-4 -18 4 -18 10 -13 Z" fill="#222B30"/>
+    </g>
+  </g>
+</g>
+</svg>
