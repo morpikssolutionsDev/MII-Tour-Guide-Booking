@@ -68,12 +68,22 @@ docs/spec/        module specs 01–11 and the design system
 
 ## Deploying to Vercel
 
-1. **Database.** Create a Turso database, then run the migrations and the seed against it:
+1. **Database.** Create a Turso database. Then create a file named `.env.turso` in the project root (it is git-ignored) with:
 
    ```bash
-   DATABASE_URL=libsql://<db>.turso.io DATABASE_AUTH_TOKEN=<token> npm run db:migrate
-   DATABASE_URL=libsql://<db>.turso.io DATABASE_AUTH_TOKEN=<token> npm run db:seed   # optional demo data
+   DATABASE_URL=libsql://<db>.turso.io
+   DATABASE_AUTH_TOKEN=<token>
+   APP_BASE_URL=https://<your-app>.vercel.app
    ```
+
+   Then create the tables and, optionally, load the demo data:
+
+   ```bash
+   npm run db:migrate:turso
+   npm run db:seed:turso      # optional: demo users and data
+   ```
+
+   Both commands print the database they write to. Check that it says `Turso libsql://…`. The plain `db:migrate` / `db:seed` commands use `.env`, which points to the local file.
 
 2. **File storage.** Vercel's filesystem is read-only, so create a Vercel Blob store and use `STORAGE_DRIVER=vercel-blob`.
 3. **Environment variables** in the Vercel project:

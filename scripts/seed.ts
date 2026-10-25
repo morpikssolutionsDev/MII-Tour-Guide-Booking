@@ -9,7 +9,7 @@ import { computeHoldExpiry } from "../src/domain/hold";
 import { calculatePrice, type PricingAddon, type PricingPackage, type PricingRule } from "../src/domain/pricing";
 import { addDays, daysBetween, isoWeekRange, toWib, wibToUtc } from "../src/domain/time";
 import * as s from "../src/db/schema";
-import { client, db } from "./db";
+import { client, db, target } from "./db";
 import { seedNotifications } from "./seed-notifications";
 import * as data from "./seed-data";
 
@@ -63,7 +63,7 @@ async function main() {
   const now = new Date();
   const nowWib = toWib(now);
   const today = nowWib.date;
-  console.log(`Seeding relative to ${today} ${nowWib.time} WIB…`);
+  console.log(`Seeding ${target} relative to ${today} ${nowWib.time} WIB…`);
   await reset();
 
   /* ----- users ----- */

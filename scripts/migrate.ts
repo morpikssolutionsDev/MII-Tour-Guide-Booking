@@ -1,7 +1,8 @@
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { client, db } from "./db";
+import { client, db, target } from "./db";
 
 async function main() {
+  console.log(`Migrating ${target}…`);
   await migrate(db, { migrationsFolder: "src/db/migrations" });
   console.log("Migrations applied.");
   client.close();

@@ -4,9 +4,15 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import * as schema from "../src/db/schema";
 
-export const client = createClient({
-  url: process.env.DATABASE_URL ?? "file:local.db",
-  authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-});
+const url = process.env.DATABASE_URL?.trim() || "file:local.db";
+const authToken = process.env.DATABASE_AUTH_TOKEN?.trim() || undefined;
+if (url.startsWith("libsql://") && !authToken) {
+  throw new Error("DATABASE_AUTH_TOKEN is required for a Turso (libsql://) database.");
+}
+
+/** Printed by every script so it is obvious which database is being written. */
+export const target = url.startsWith("file:") ? `local file ${url.slice(5)}` : `Turso ${url}`;
+
+export const client = createClient({ url, authToken });
 
 export const db = drizzle(client, { schema });
