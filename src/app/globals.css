@@ -1,0 +1,235 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Design system "Senja di TMII" (docs/spec/design-system.md). Light only. */
+
+@theme {
+  /* §3.1 ramps */
+  --color-merah-50: #fef2f2;
+  --color-merah-100: #fde0e1;
+  --color-merah-200: #fbc0c3;
+  --color-merah-300: #f68f94;
+  --color-merah-400: #f1555c;
+  --color-merah-500: #ec1b24;
+  --color-merah-600: #c8141c;
+  --color-merah-700: #a01017;
+  --color-merah-800: #7a0d12;
+  --color-merah-900: #540a0d;
+
+  --color-danau-50: #f1f7f8;
+  --color-danau-100: #ddecee;
+  --color-danau-200: #bcd8dc;
+  --color-danau-300: #9dc3c9;
+  --color-danau-400: #84adb2;
+  --color-danau-500: #3d8a99;
+  --color-danau-600: #2b6f7c;
+  --color-danau-700: #245b66;
+  --color-danau-800: #1e4950;
+  --color-danau-900: #16353b;
+
+  --color-senja-50: #fff6ec;
+  --color-senja-100: #fee9d2;
+  --color-senja-200: #fbd3a8;
+  --color-senja-300: #f7be86;
+  --color-senja-400: #f3ac69;
+  --color-senja-500: #e8913f;
+  --color-senja-600: #cb781a;
+  --color-senja-700: #a35e12;
+  --color-senja-800: #7b460e;
+  --color-senja-900: #52300a;
+
+  --color-rimba-50: #eef5f1;
+  --color-rimba-100: #d6e8de;
+  --color-rimba-200: #aed1be;
+  --color-rimba-300: #7fb49a;
+  --color-rimba-400: #4e9474;
+  --color-rimba-500: #2f7757;
+  --color-rimba-600: #215e44;
+  --color-rimba-700: #184a35;
+  --color-rimba-800: #113a29;
+  --color-rimba-900: #0d2d1f;
+
+  --color-batu-50: #fbf8f3;
+  --color-batu-100: #f5efe5;
+  --color-batu-200: #ebdfcb;
+  --color-batu-300: #dec8a6;
+  --color-batu-400: #d3ad80;
+  --color-batu-500: #ba8f5e;
+  --color-batu-600: #977148;
+  --color-batu-700: #745737;
+  --color-batu-800: #533e28;
+  --color-batu-900: #35281a;
+
+  --color-kabut-50: #f5f8f9;
+  --color-kabut-100: #e8eef0;
+  --color-kabut-200: #d2dce0;
+  --color-kabut-300: #b3c2c8;
+  --color-kabut-400: #8fa2aa;
+  --color-kabut-500: #6e838c;
+  --color-kabut-600: #566971;
+  --color-kabut-700: #44545b;
+  --color-kabut-800: #333f45;
+  --color-kabut-900: #222b30;
+
+  /* §3.5 validated chart palette (fixed order, max 4 series) */
+  --color-chart-1: #1c7fa6;
+  --color-chart-2: #dc7a22;
+  --color-chart-3: #7a5aa8;
+  --color-chart-4: #b8862b;
+
+  --color-brand: #ec1b24;
+  --color-glow: #f3ac69;
+
+  /* §5 elevation, tinted with Rimba 900 */
+  --shadow-card: 0 1px 2px rgb(13 45 31 / 0.06), 0 1px 1px rgb(13 45 31 / 0.04);
+  --shadow-overlay: 0 12px 32px rgb(13 45 31 / 0.18);
+
+  /* §4 typography */
+  --text-display: 1.875rem;
+  --text-display--line-height: 2.25rem;
+  --text-kpi: 1.75rem;
+  --text-kpi--line-height: 2rem;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-plus-jakarta), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-surface-muted: var(--surface-muted);
+  --color-input-border: var(--border-input);
+  /* §5 radius: sm 6 · md 10 · lg 14 · xl 20 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+}
+
+/* §3.2 semantic tokens */
+:root {
+  color-scheme: light;
+  --radius: 14px;
+  --background: var(--color-batu-50);
+  --foreground: var(--color-kabut-900);
+  --card: #ffffff;
+  --card-foreground: var(--color-kabut-900);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-kabut-900);
+  --primary: var(--color-merah-600);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-batu-100);
+  --secondary-foreground: var(--color-kabut-900);
+  --muted: var(--color-batu-100);
+  --muted-foreground: var(--color-kabut-600);
+  --accent: var(--color-danau-50);
+  --accent-foreground: var(--color-danau-800);
+  --destructive: var(--color-merah-700);
+  --border: var(--color-kabut-200);
+  --border-input: var(--color-kabut-500);
+  --input: var(--color-kabut-500);
+  --ring: var(--color-danau-600);
+  --surface-muted: var(--color-batu-100);
+  --sidebar: var(--color-rimba-900);
+  --sidebar-foreground: var(--color-kabut-100);
+  --sidebar-primary: var(--color-senja-400);
+  --sidebar-primary-foreground: var(--color-rimba-900);
+  --sidebar-accent: var(--color-rimba-700);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: var(--color-senja-400);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  /* §7.2 inputs are 16px on mobile to avoid iOS zoom on focus */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+  /* §11 visible focus ring everywhere */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* §5 the glow line */
+  .glow-top {
+    box-shadow: inset 0 3px 0 0 var(--color-glow);
+  }
+  .glow-left {
+    box-shadow: inset 3px 0 0 0 var(--color-glow);
+  }
+  /* Papan Jadwal leave cells: 45° Batu hatching */
+  .hatch-batu {
+    background-color: var(--color-batu-100);
+    background-image: repeating-linear-gradient(
+      45deg,
+      var(--color-batu-200) 0 2px,
+      transparent 2px 8px
+    );
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

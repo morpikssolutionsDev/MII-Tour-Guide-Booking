@@ -1,0 +1,171 @@
+/* Decorated logo choreography (design-system §9.2). Each animatable group in the SVG is
+   drawn around its pivot at local (0,0), so pivots use transform-box: view-box + origin 0 0. */
+
+.tmii-decorated [data-part="snake-head"],
+.tmii-decorated [data-part="snake-tongue"],
+.tmii-decorated [data-part="bird-perched-head"],
+.tmii-decorated [data-part="bird-perched-tail"],
+.tmii-decorated .leaf,
+.tmii-decorated .castle-flag,
+.tmii-decorated [data-part="carousel-flag"],
+.tmii-decorated .wing {
+  transform-box: view-box;
+  transform-origin: 0 0;
+}
+
+.tmii-decorated[data-paused] * {
+  animation-play-state: paused !important;
+}
+
+/* ----- intro ----- */
+.tmii-decorated[data-animated] .letter {
+  transform-box: fill-box;
+  animation: tmii-rise 400ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.tmii-decorated[data-animated] [data-part="letter-m"] { animation-delay: 60ms; }
+.tmii-decorated[data-animated] [data-part="letter-i-1"] { animation-delay: 120ms; }
+.tmii-decorated[data-animated] [data-part="letter-i-2"] { animation-delay: 180ms; }
+
+.tmii-decorated[data-animated] [data-part="castle"] {
+  animation: tmii-rise-far 600ms cubic-bezier(0.2, 0, 0, 1) 250ms both;
+}
+
+.tmii-decorated[data-animated] .leaf {
+  animation:
+    tmii-unfurl 650ms cubic-bezier(0.34, 1.56, 0.64, 1) calc(450ms + var(--i) * 70ms) both,
+    tmii-sway 4s ease-in-out calc(1400ms + var(--i) * 370ms) infinite;
+}
+
+.tmii-decorated[data-animated] .snake-body {
+  stroke-dasharray: 1;
+  animation: tmii-draw 110ms linear both;
+}
+.tmii-decorated[data-animated] .snake-spots,
+.tmii-decorated[data-animated] [data-part="snake-tail"] {
+  animation: tmii-fade 300ms ease-out 1200ms both;
+}
+.tmii-decorated[data-animated] [data-seq="0"] .snake-body { animation-delay: 600ms; }
+.tmii-decorated[data-animated] [data-seq="1"] .snake-body { animation-delay: 710ms; }
+.tmii-decorated[data-animated] [data-seq="2"] .snake-body { animation-delay: 820ms; }
+.tmii-decorated[data-animated] [data-seq="3"] .snake-body { animation-delay: 930ms; }
+.tmii-decorated[data-animated] [data-seq="4"] .snake-body { animation-delay: 1040ms; }
+.tmii-decorated[data-animated] [data-part="snake-head"] {
+  animation: tmii-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 1300ms both;
+}
+.tmii-decorated[data-animated] [data-part="snake-tongue"] {
+  animation: tmii-flick 4s ease-in-out 1800ms infinite;
+}
+
+.tmii-decorated[data-animated] [data-part="carousel-canopy"] {
+  animation: tmii-drop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 800ms both;
+}
+.tmii-decorated[data-animated] [data-part="carousel-horse"] {
+  animation: tmii-bob 1.6s ease-in-out 1500ms infinite;
+}
+
+.tmii-decorated[data-animated] [data-part="bird-perched"] {
+  animation: tmii-hop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 1000ms both;
+}
+.tmii-decorated[data-animated] [data-part="bird-perched-head"] {
+  animation: tmii-tilt 3s ease-in-out 1800ms infinite;
+}
+.tmii-decorated[data-animated] [data-part="bird-perched-tail"] {
+  animation: tmii-tail 3.4s ease-in-out 1600ms infinite;
+}
+
+.tmii-decorated[data-animated] .bird-flying {
+  animation: tmii-glide 700ms cubic-bezier(0.2, 0, 0, 1) 1100ms both;
+}
+.tmii-decorated[data-animated] .wing {
+  animation: tmii-flap 450ms ease-in-out 1100ms infinite alternate;
+}
+.tmii-decorated[data-animated] .wing-far {
+  animation-delay: 1200ms;
+}
+
+.tmii-decorated[data-animated] .castle-flag,
+.tmii-decorated[data-animated] [data-part="carousel-flag"] {
+  animation: tmii-wave 1.2s ease-in-out 900ms infinite alternate;
+}
+
+/* One-shot variant for the feedback thank-you screen: only the flying birds. */
+.tmii-decorated[data-birds-only] .wing {
+  animation: tmii-flap 450ms ease-in-out 0s 8 alternate;
+}
+.tmii-decorated[data-birds-only] .bird-flying {
+  animation: tmii-glide 900ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes tmii-rise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-rise-far {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-unfurl {
+  from { transform: scale(0.6) rotate(-12deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(3deg); }
+}
+@keyframes tmii-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes tmii-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tmii-pop {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-flick {
+  0%, 88%, 100% { transform: scaleX(1); }
+  92% { transform: scaleX(0); }
+  96% { transform: scaleX(1.15); }
+}
+@keyframes tmii-drop {
+  from { transform: translateY(-30px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes tmii-hop {
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-tilt {
+  0%, 70%, 100% { transform: rotate(0deg); }
+  80%, 90% { transform: rotate(-12deg); }
+}
+@keyframes tmii-tail {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+@keyframes tmii-glide {
+  from { transform: translateX(-60px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes tmii-flap {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(-0.5); }
+}
+@keyframes tmii-wave {
+  from { transform: skewY(-6deg); }
+  to { transform: skewY(6deg); }
+}
+
+/* §9.2: reduced motion renders the final static frame. */
+@media (prefers-reduced-motion: reduce) {
+  .tmii-decorated[data-animated] *,
+  .tmii-decorated[data-birds-only] * {
+    animation: none !important;
+  }
+}

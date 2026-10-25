@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-70 135 875 161" width="875" height="161">
+<g id="leaves">
+ <g id="leaves-left">
+  <g transform="translate(40 286) rotate(-62)"><g id="leaf-l1" class="leaf">
+    <path d="M0 0 C34 -30 27.200000000000003 -96 0 -120 C-27.200000000000003 -96 -34 -30 0 0 Z" fill="#215E44"/>
+    <path d="M0 -4 Q2.04 -60 0 -110.4" fill="none" stroke="#4E9474" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -36 L18.700000000000003 -50.4 M0 -36 L-18.700000000000003 -50.4 M0 -60 L18.700000000000003 -74.4 M0 -60 L-18.700000000000003 -74.4 M0 -84 L18.700000000000003 -98.39999999999999 M0 -84 L-18.700000000000003 -98.39999999999999" fill="none" stroke="#4E9474" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+  <g transform="translate(40 286) rotate(-32)"><g id="leaf-l2" class="leaf">
+    <path d="M0 0 C40 -37.5 32 -120 0 -150 C-32 -120 -40 -37.5 0 0 Z" fill="#4E9474"/>
+    <path d="M0 -4 Q2.4 -75 0 -138" fill="none" stroke="#215E44" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -45 L22 -63 M0 -45 L-22 -63 M0 -75 L22 -93 M0 -75 L-22 -93 M0 -105 L22 -122.99999999999999 M0 -105 L-22 -122.99999999999999" fill="none" stroke="#215E44" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+  <g transform="translate(40 286) rotate(-6)"><g id="leaf-l3" class="leaf">
+    <path d="M0 0 C34 -32.5 27.200000000000003 -104 0 -130 C-27.200000000000003 -104 -34 -32.5 0 0 Z" fill="#215E44"/>
+    <path d="M0 -4 Q2.04 -65 0 -119.60000000000001" fill="none" stroke="#4E9474" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -39 L18.700000000000003 -54.6 M0 -39 L-18.700000000000003 -54.6 M0 -65 L18.700000000000003 -80.6 M0 -65 L-18.700000000000003 -80.6 M0 -91 L18.700000000000003 -106.6 M0 -91 L-18.700000000000003 -106.6" fill="none" stroke="#4E9474" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+ </g>
+ <g id="leaves-mid">
+  <g transform="translate(530 288) rotate(-24)"><g id="leaf-m1" class="leaf">
+    <path d="M0 0 C32 -30 25.6 -96 0 -120 C-25.6 -96 -32 -30 0 0 Z" fill="#4E9474"/>
+    <path d="M0 -4 Q1.92 -60 0 -110.4" fill="none" stroke="#215E44" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -36 L17.6 -50.4 M0 -36 L-17.6 -50.4 M0 -60 L17.6 -74.4 M0 -60 L-17.6 -74.4 M0 -84 L17.6 -98.39999999999999 M0 -84 L-17.6 -98.39999999999999" fill="none" stroke="#215E44" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+  <g transform="translate(530 288) rotate(8)"><g id="leaf-m2" class="leaf">
+    <path d="M0 0 C36 -37.5 28.8 -120 0 -150 C-28.8 -120 -36 -37.5 0 0 Z" fill="#215E44"/>
+    <path d="M0 -4 Q2.16 -75 0 -138" fill="none" stroke="#4E9474" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -45 L19.8 -63 M0 -45 L-19.8 -63 M0 -75 L19.8 -93 M0 -75 L-19.8 -93 M0 -105 L19.8 -122.99999999999999 M0 -105 L-19.8 -122.99999999999999" fill="none" stroke="#4E9474" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+ </g>
+ <g id="leaves-right">
+  <g transform="translate(712 288) rotate(28)"><g id="leaf-r1" class="leaf">
+    <path d="M0 0 C34 -32.5 27.200000000000003 -104 0 -130 C-27.200000000000003 -104 -34 -32.5 0 0 Z" fill="#4E9474"/>
+    <path d="M0 -4 Q2.04 -65 0 -119.60000000000001" fill="none" stroke="#215E44" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -39 L18.700000000000003 -54.6 M0 -39 L-18.700000000000003 -54.6 M0 -65 L18.700000000000003 -80.6 M0 -65 L-18.700000000000003 -80.6 M0 -91 L18.700000000000003 -106.6 M0 -91 L-18.700000000000003 -106.6" fill="none" stroke="#215E44" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+  <g transform="translate(712 288) rotate(62)"><g id="leaf-r2" class="leaf">
+    <path d="M0 0 C30 -25 24 -80 0 -100 C-24 -80 -30 -25 0 0 Z" fill="#215E44"/>
+    <path d="M0 -4 Q1.7999999999999998 -50 0 -92" fill="none" stroke="#4E9474" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 -30 L16.5 -42 M0 -30 L-16.5 -42 M0 -50 L16.5 -62 M0 -50 L-16.5 -62 M0 -70 L16.5 -82 M0 -70 L-16.5 -82" fill="none" stroke="#4E9474" stroke-width="2" stroke-linecap="round"/>
+  </g></g>
+ </g>
+</g>
+</svg>
