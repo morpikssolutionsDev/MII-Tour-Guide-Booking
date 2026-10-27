@@ -13,7 +13,7 @@ import type { BookingStatus } from "@/db/schema";
 import { useAction } from "@/hooks/use-action";
 import { t } from "@/i18n/id";
 import { formatDateTime } from "@/lib/format";
-import { completeBooking } from "@/server/bookings/actions";
+import { completeBooking, completeGroup } from "@/server/bookings/actions";
 import { acknowledgeAssignment } from "@/server/preparation/actions";
 
 const sp = t.portal;
@@ -30,6 +30,7 @@ export function TourActionBar({
   customerPhone,
   guidesToRate,
   meName,
+  groupHostId,
 }: {
   bookingId: string;
   code: string;
@@ -40,6 +41,8 @@ export function TourActionBar({
   feedback: { submitted: boolean; url: string | null; expiresAt: string; expired: boolean; whatsappText: string | null } | null;
   customerPhone: string;
   guidesToRate: { id: string; name: string }[];
+  /** Host of a shared tour with more than one booking: enables "Selesaikan semua" (12 BR-12-M11). */
+  groupHostId: string | null;
   meName: string;
 }) {
   const [dialog, setDialog] = useState<"complete" | "noshow" | "share" | "fill" | null>(null);
@@ -49,6 +52,7 @@ export function TourActionBar({
     successMessage: (d) => (d.status === "completed" ? t.booking.actions.completed : t.booking.actions.noShowDone),
     onSuccess: (d) => setDialog(d.status === "completed" ? "share" : null),
   });
+  const completeAll = useAction(completeGroup, { successMessage: (d) => t.merge.completeAllDone(d.completed.length) });
   const paid = status === "confirmed" || status === "ready";
   if (isReleased || status === "cancelled" || status === "evaluated" || status === "no_show") return null;
 
@@ -67,15 +71,23 @@ export function TourActionBar({
     );
   } else if (paid && started) {
     content = (
-      <div className="flex gap-2">
-        <Button variant="secondary" size="lg" onClick={() => setDialog("noshow")}>
-          <UserX />
-          {sp.tour.noShow}
-        </Button>
-        <Button className="flex-1" size="lg" onClick={() => setDialog("complete")}>
-          <CheckCheck />
-          {sp.tour.complete}
-        </Button>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Button variant="secondary" size="lg" onClick={() => setDialog("noshow")}>
+            <UserX />
+            {sp.tour.noShow}
+          </Button>
+          <Button className="flex-1" size="lg" variant={groupHostId ? "secondary" : "default"} onClick={() => setDialog("complete")}>
+            <CheckCheck />
+            {sp.tour.complete}
+          </Button>
+        </div>
+        {groupHostId && (
+          <Button className="w-full" size="lg" pending={completeAll.pending} onClick={() => completeAll.run({ hostId: groupHostId })}>
+            <CheckCheck />
+            {t.merge.completeAll}
+          </Button>
+        )}
       </div>
     );
   } else if (status === "completed" && feedback && !feedback.submitted) {

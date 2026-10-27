@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   bookingChecklistItems,
@@ -16,8 +16,8 @@ import {
   type BookingStatus,
 } from "@/db/schema";
 import { isGuideWorking } from "@/domain/availability";
-import { addDays, wibToday } from "@/domain/time";
-import { expireHolds } from "@/server/bookings/holds";
+import { addDays, wibToday, wibToUtc } from "@/domain/time";
+import { syncHolds } from "@/server/bookings/holds";
 import { findLiveConflicts } from "@/server/bookings/conflicts";
 import type { Role } from "@/db/schema";
 
@@ -26,9 +26,9 @@ const WIDGET_ROWS = 5;
 
 /** 11 §3.1 Beranda. Ignores Laporan filters and always uses "now" in WIB (BR-11-8). */
 export async function getDashboard(role: Role, now: Date = new Date()) {
-  await expireHolds(now);
+  await syncHolds(now);
   const today = wibToday(now);
-  const [tours, expiring, guidesToday, notAcked, prep, leave, balance, latestFeedback] = await Promise.all([
+  const [tours, expiring, guidesToday, notAcked, prep, leave, balance, latestFeedback, created] = await Promise.all([
     toursToday(today),
     expiringSoon(now),
     guidesOnDuty(today),
@@ -37,8 +37,9 @@ export async function getDashboard(role: Role, now: Date = new Date()) {
     role === "admin" ? pendingLeave() : Promise.resolve(null),
     balanceMismatch(),
     recentFeedback(),
+    createdToday(today),
   ]);
-  return { today, tours, expiring, guides: guidesToday, notAcked, prep, leave, balance, feedback: latestFeedback };
+  return { today, tours, expiring, guides: guidesToday, notAcked, prep, leave, balance, feedback: latestFeedback, created };
 }
 
 export type Dashboard = Awaited<ReturnType<typeof getDashboard>>;
@@ -67,17 +68,28 @@ async function toursToday(today: string) {
       people: bookings.people,
       customerName: customers.name,
       languageCode: languages.code,
+      mergeGroupId: bookings.mergeGroupId,
     })
     .from(bookings)
     .innerJoin(customers, eq(customers.id, bookings.customerId))
     .innerJoin(languages, eq(languages.id, bookings.languageId))
     .where(and(eq(bookings.tourDate, today), inArray(bookings.status, BOOKED)))
     .orderBy(asc(bookings.slotStart), asc(bookings.code));
-  const names = await guideNamesFor(rows.map((r) => r.id));
+  const names = await guideNamesFor([...new Set(rows.map((r) => r.mergeGroupId ?? r.id))]);
+  // 12 §3.2: members of a shared tour fold into their host's row ("+n digabung", summed people).
+  const shown = rows.filter((r) => !r.mergeGroupId || r.mergeGroupId === r.id || !rows.some((h) => h.id === r.mergeGroupId));
   return {
     total: rows.length,
     done: rows.filter((r) => r.status === "completed" || r.status === "evaluated").length,
-    rows: rows.map((r) => ({ ...r, guideNames: names.get(r.id) ?? [] })),
+    rows: shown.map((r) => {
+      const members = r.mergeGroupId === r.id ? rows.filter((m) => m.mergeGroupId === r.id && m.id !== r.id) : [];
+      return {
+        ...r,
+        people: r.people + members.reduce((sum, m) => sum + m.people, 0),
+        merged: members.length,
+        guideNames: names.get(r.mergeGroupId ?? r.id) ?? [],
+      };
+    }),
   };
 }
 
@@ -223,4 +235,17 @@ async function recentFeedback() {
         .where(inArray(feedbackGuideRatings.feedbackId, rows.map((r) => r.id)))
     : [];
   return rows.map((r) => ({ ...r, guides: ratings.filter((g) => g.feedbackId === r.id) }));
+}
+
+/** 12 §3.5 KPI "Pemesanan baru hari ini" (shown instead of "Menunggu pembayaran" when payment is bypassed). */
+async function createdToday(today: string) {
+  const rows = await db
+    .select({ channel: bookings.channel, n: count() })
+    .from(bookings)
+    .where(and(gte(bookings.createdAt, wibToUtc(today).toISOString()), lt(bookings.createdAt, wibToUtc(addDays(today, 1)).toISOString())))
+    .groupBy(bookings.channel);
+  return {
+    total: rows.reduce((sum, r) => sum + r.n, 0),
+    callCenter: rows.find((r) => r.channel === "call_center")?.n ?? 0,
+  };
 }

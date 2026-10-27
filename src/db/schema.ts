@@ -45,8 +45,12 @@ export const CANCEL_REASONS = [
   "expired",
 ] as const;
 export const PAYMENT_KINDS = ["payment", "adjustment"] as const;
-export const PAYMENT_METHODS = ["bank_transfer", "qris", "cash", "edc"] as const;
-export const NOTIFICATION_CHANNELS = ["in_app", "whatsapp_mock"] as const;
+// `system`: recorded automatically while payment confirmation is off (12 BR-12-P3).
+export const PAYMENT_METHODS = ["bank_transfer", "qris", "cash", "edc", "system"] as const;
+/** Methods staff can pick by hand (Tandai Lunas, penyesuaian). */
+export const MANUAL_PAYMENT_METHODS = ["bank_transfer", "qris", "cash", "edc"] as const;
+export const NOTIFICATION_CHANNELS = ["in_app", "whatsapp_mock", "email"] as const;
+export const EMAIL_DELIVERY_STATUSES = ["pending", "terkirim", "gagal"] as const;
 export const FEEDBACK_SOURCES = ["tourist", "staff", "guide"] as const;
 export const REVISIT_ANSWERS = ["yes", "maybe", "no"] as const;
 
@@ -327,6 +331,9 @@ export const bookings = sqliteTable(
     specialNeeds: text("special_needs"),
     internalNotes: text("internal_notes"),
     groupRef: text("group_ref"),
+    // 12 merge: the host booking's id on every booking of a shared tour (host included).
+    mergeGroupId: text("merge_group_id"),
+    mergedAt: text("merged_at"),
     cancelReason: text("cancel_reason", { enum: CANCEL_REASONS }),
     cancelDetail: text("cancel_detail"),
     refundNote: text("refund_note"),
@@ -342,6 +349,7 @@ export const bookings = sqliteTable(
     index("ix_bookings_status_hold").on(t.status, t.holdExpiresAt),
     index("ix_bookings_customer").on(t.customerId),
     index("ix_bookings_created").on(t.createdAt),
+    index("ix_bookings_merge_group").on(t.mergeGroupId),
   ],
 );
 
@@ -364,6 +372,9 @@ export const bookingGuides = sqliteTable(
     notifiedAt: text("notified_at"),
     shortNotice: bool("short_notice").notNull().default(false),
     acknowledgedAt: text("acknowledged_at"),
+    // 12 force confirm: the admin who acknowledged on the guide's behalf, and why.
+    acknowledgedBy: text("acknowledged_by").references(() => users.id),
+    ackNote: text("ack_note"),
   },
   (t) => [
     // Double-booking guard (05 §4): one active assignment per guide per date + slot.
@@ -423,9 +434,8 @@ export const payments = sqliteTable(
     proofUrl: text("proof_url"),
     proofName: text("proof_name"),
     note: text("note"),
-    recordedBy: text("recorded_by")
-      .notNull()
-      .references(() => users.id),
+    // NULL = recorded by the system (12 BR-12-P3).
+    recordedBy: text("recorded_by").references(() => users.id),
     createdAt: createdAt(),
     voidedAt: text("voided_at"),
     voidedBy: text("voided_by").references(() => users.id),
@@ -477,6 +487,12 @@ export const notifications = sqliteTable(
     link: text("link"),
     context: text("context", { mode: "json" }).notNull().$defaultFn(() => ({})),
     dedupeKey: text("dedupe_key").unique(),
+    // Email channel only (12 BR-12-E4).
+    recipientEmail: text("recipient_email"),
+    deliveryStatus: text("delivery_status", { enum: EMAIL_DELIVERY_STATUSES }),
+    error: text("error"),
+    sentAt: text("sent_at"),
+    attachmentName: text("attachment_name"),
     readAt: text("read_at"),
     createdAt: createdAt(),
   },
@@ -527,5 +543,8 @@ export type Role = (typeof ROLES)[number];
 export type Channel = (typeof CHANNELS)[number];
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUSES)[number];
 export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
 export type CancelReason = (typeof CANCEL_REASONS)[number];

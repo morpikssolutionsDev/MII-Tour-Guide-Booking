@@ -1,3 +1,4 @@
 {
-    "claudeStatus.statusBar.alignment": "right"
+    "claudeStatus.statusBar.alignment": "right",
+    "python.terminal.useEnvFile": true
 }

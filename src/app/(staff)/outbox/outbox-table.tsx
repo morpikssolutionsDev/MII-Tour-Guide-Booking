@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, MessageCircle } from "lucide-react";
+import { Bell, CheckCircle2, Clock, Mail, MessageCircle, Paperclip, RotateCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Pill } from "@/components/common/badges";
@@ -10,14 +10,24 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { waNumber } from "@/domain/phone";
+import { useAction } from "@/hooks/use-action";
 import { t } from "@/i18n/id";
 import { formatDateTime } from "@/lib/format";
+import { resendEmail } from "@/server/email/actions";
 import { EVENT_LABELS } from "@/server/notify/templates";
 import type { OutboxRow } from "@/server/notify/queries";
 
 const so = t.outbox;
+const se = t.emailSettings;
 
 function ChannelPill({ channel }: { channel: OutboxRow["channel"] }) {
+  if (channel === "email") {
+    return (
+      <Pill tone="batu" icon={Mail}>
+        {so.channels.email}
+      </Pill>
+    );
+  }
   return channel === "whatsapp_mock" ? (
     <Pill tone="rimba" icon={MessageCircle}>
       {so.channels.whatsapp_mock}
@@ -29,15 +39,32 @@ function ChannelPill({ channel }: { channel: OutboxRow["channel"] }) {
   );
 }
 
+/** 12 §3.7: delivery status for email rows. */
+function DeliveryPill({ status }: { status: OutboxRow["deliveryStatus"] }) {
+  if (status === "terkirim") return <Pill tone="rimba" icon={CheckCircle2}>{se.status.terkirim}</Pill>;
+  if (status === "gagal") return <Pill tone="merah" icon={XCircle}>{se.status.gagal}</Pill>;
+  return <Pill tone="kabut" icon={Clock}>{se.status.pending}</Pill>;
+}
+
 function statusText(row: OutboxRow) {
   if (row.channel === "whatsapp_mock") return so.simulated;
+  if (row.channel === "email") return se.status[row.deliveryStatus ?? "pending"];
   return row.readAt ? so.read(formatDateTime(row.readAt)) : so.unread;
+}
+
+function recipientOf(r: OutboxRow) {
+  if (r.channel === "email") return r.recipientEmail ?? r.recipientName;
+  return r.recipientRole ? `${r.recipientName} · ${t.roles[r.recipientRole]}` : `${r.recipientName} · ${r.recipientPhone ?? ""}`;
 }
 
 /** Outbox list with a detail drawer: full body, copy, wa.me link, template context (09 §3.2). */
 export function OutboxTable({ rows }: { rows: OutboxRow[] }) {
   const [selected, setSelected] = useState<OutboxRow | null>(null);
-  const recipient = (r: OutboxRow) => (r.recipientRole ? `${r.recipientName} · ${t.roles[r.recipientRole]}` : `${r.recipientName} · ${r.recipientPhone ?? ""}`);
+  const recipient = recipientOf;
+  const resend = useAction(resendEmail, {
+    successMessage: (r) => (r.ok ? se.resent : se.failed(r.error ?? "")),
+    onSuccess: () => setSelected(null),
+  });
 
   return (
     <>
@@ -75,7 +102,9 @@ export function OutboxTable({ rows }: { rows: OutboxRow[] }) {
                     </Link>
                   )}
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{statusText(r)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {r.channel === "email" ? <DeliveryPill status={r.deliveryStatus} /> : statusText(r)}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -113,6 +142,30 @@ export function OutboxTable({ rows }: { rows: OutboxRow[] }) {
               <p className="text-sm text-muted-foreground">
                 {recipient(selected)} · {formatDateTime(selected.createdAt)} · {statusText(selected)}
               </p>
+              {selected.channel === "email" && (
+                <div className="space-y-2 rounded-md border p-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DeliveryPill status={selected.deliveryStatus} />
+                    {selected.attachmentName && (
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                        <Paperclip className="size-4" aria-hidden />
+                        {se.attachment}: {selected.attachmentName}
+                      </span>
+                    )}
+                  </div>
+                  {selected.error && (
+                    <p className="text-merah-700">
+                      {se.error}: {selected.error}
+                    </p>
+                  )}
+                  {selected.deliveryStatus === "gagal" && (
+                    <Button size="sm" pending={resend.pending} onClick={() => resend.run({ notificationId: selected.id })}>
+                      <RotateCw />
+                      {se.resend}
+                    </Button>
+                  )}
+                </div>
+              )}
               <p className="rounded-md bg-surface-muted p-3 text-sm whitespace-pre-line" lang={selected.locale}>
                 {selected.body}
               </p>

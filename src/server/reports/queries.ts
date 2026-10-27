@@ -34,6 +34,9 @@ function instantRange(p: Period) {
   return { from: wibToUtc(p.from).toISOString(), to: wibToUtc(addDays(p.to, 1)).toISOString() };
 }
 
+/** A merged booking is served by its shared tour host's guides (12 BR-12-M12). */
+const servedBy = sql`coalesce(${bookings.mergeGroupId}, ${bookings.id})`;
+
 /** BR-11-2: filters apply to the booking; Tour Guide = at least one non-released assignment. */
 function bookingFilters(f: ReportFilters): SQL[] {
   const out: SQL[] = [];
@@ -46,7 +49,7 @@ function bookingFilters(f: ReportFilters): SQL[] {
         db
           .select({ one: sql`1` })
           .from(bookingGuides)
-          .where(and(eq(bookingGuides.bookingId, bookings.id), inArray(bookingGuides.guideId, f.guideIds), isNull(bookingGuides.releasedAt))),
+          .where(and(eq(bookingGuides.bookingId, servedBy), inArray(bookingGuides.guideId, f.guideIds), isNull(bookingGuides.releasedAt))),
       ),
     );
   }
@@ -306,7 +309,7 @@ export async function getGuidePerformance(p: Period, f: ReportFilters) {
     db
       .select({ guideId: bookingGuides.guideId, status: bookings.status, n: sql<number>`count(*)` })
       .from(bookingGuides)
-      .innerJoin(bookings, eq(bookings.id, bookingGuides.bookingId))
+      .innerJoin(bookings, eq(servedBy, bookingGuides.bookingId))
       .where(and(isNull(bookingGuides.releasedAt), inArray(bookings.status, ["completed", "evaluated", "no_show"]), inPeriod(p), ...bookingFilters({ ...f, guideIds: [] })))
       .groupBy(bookingGuides.guideId, bookings.status),
     db

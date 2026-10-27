@@ -8,14 +8,35 @@ import { useAction } from "@/hooks/use-action";
 import { t } from "@/i18n/id";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { resendGuideNotice, setChecklistItem } from "@/server/preparation/actions";
+import { ForceAckButton } from "./force-ack-dialog";
 
 type Item = { id: string; systemKey: string | null; label: string; description: string | null; checkedAt: string | null; checkedByName: string | null };
-type GuideAck = { guideId: string; displayName: string; acknowledgedAt: string | null; notifiedAt: string | null };
+type GuideAck = {
+  guideId: string;
+  displayName: string;
+  acknowledgedAt: string | null;
+  notifiedAt: string | null;
+  /** Set when an admin confirmed on the guide's behalf (12 BR-12-F2). */
+  acknowledgedByName: string | null;
+  ackNote: string | null;
+};
 
 const pp = t.preparation;
 
 /** 07 §3.1 "Persiapan" checklist with per-guide acknowledgement. */
-export function ChecklistPanel({ bookingId, items, guides, editable }: { bookingId: string; items: Item[]; guides: GuideAck[]; editable: boolean }) {
+export function ChecklistPanel({
+  bookingId,
+  items,
+  guides,
+  editable,
+  canForceAck,
+}: {
+  bookingId: string;
+  items: Item[];
+  guides: GuideAck[];
+  editable: boolean;
+  canForceAck: boolean;
+}) {
   const toggle = useAction(setChecklistItem);
   const resend = useAction(resendGuideNotice, { successMessage: pp.resent });
   const done = items.filter((i) => i.checkedAt).length;
@@ -62,7 +83,10 @@ export function ChecklistPanel({ bookingId, items, guides, editable }: { booking
                   {guides.map((g) => (
                     <li key={g.guideId} className="flex flex-wrap items-center gap-2 text-xs">
                       {g.acknowledgedAt ? (
-                        <span className="text-rimba-700">{pp.ackLine(g.displayName, formatDateTime(g.acknowledgedAt))}</span>
+                        <span className="text-rimba-700" title={g.ackNote ?? undefined}>
+                          {pp.ackLine(g.displayName, formatDateTime(g.acknowledgedAt))}
+                          {g.acknowledgedByName && ` · ${pp.forceAck.byAdmin(g.acknowledgedByName)}`}
+                        </span>
                       ) : (
                         <>
                           <span className="text-senja-800">{pp.notAckedLine(g.displayName, g.notifiedAt ? formatRelative(g.notifiedAt, now) : t.common.none)}</span>
@@ -72,6 +96,7 @@ export function ChecklistPanel({ bookingId, items, guides, editable }: { booking
                               {pp.resend}
                             </Button>
                           )}
+                          {editable && canForceAck && g.notifiedAt && <ForceAckButton bookingId={bookingId} guideId={g.guideId} guideName={g.displayName} />}
                         </>
                       )}
                     </li>

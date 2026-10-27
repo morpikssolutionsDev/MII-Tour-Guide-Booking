@@ -297,9 +297,14 @@ export function BookingWizard({
           toast.success(t.booking.reschedule.saved);
           router.push(`/pemesanan/${reschedule.bookingId}`);
         } else {
-          const data = result.data as { id: string; code: string };
-          toast.success(sw.created(data.code));
-          router.push(`/pemesanan/${data.id}?baru=1`);
+          const data = result.data as { id: string; code: string; confirmed: boolean };
+          // 12 §3.4: without payment confirmation the booking is done; show the splash.
+          if (data.confirmed) {
+            router.push(`/pemesanan/${data.id}/dibuat`);
+          } else {
+            toast.success(sw.created(data.code));
+            router.push(`/pemesanan/${data.id}?baru=1`);
+          }
         }
         return;
       }

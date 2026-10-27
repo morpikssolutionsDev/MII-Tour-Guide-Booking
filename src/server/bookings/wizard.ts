@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bookingGuides, bookings, customers, guides, languages, slots } from "@/db/schema";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import type { PriceSnapshot } from "@/domain/pricing";
 import { addDays, isValidDate, wibToday } from "@/domain/time";
 import type { CurrentUser } from "../session";
@@ -26,6 +27,7 @@ export async function loadWizardConfig(keep: { packageId?: string; languageId?: 
     today,
     maxDate: addDays(today, settings.booking_horizon_days),
     holdHours: settings.hold_expiry_hours,
+    paymentConfirmation: isPaymentConfirmationEnabled(),
     languages: langs
       .filter((l) => l.isActive || l.id === keep.languageId)
       .map((l) => ({ id: l.id, code: l.code, nameId: l.nameId })),

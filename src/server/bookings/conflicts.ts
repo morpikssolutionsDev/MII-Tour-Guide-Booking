@@ -4,7 +4,7 @@ import { db, type Executor } from "@/db/client";
 import { bookingGuides, bookings, customers } from "@/db/schema";
 import { LIVE_STATUSES } from "@/domain/booking-status";
 import { isoWeekday, toWib, wibToUtc } from "@/domain/time";
-import { expireHolds } from "./holds";
+import { syncHolds } from "./holds";
 
 /** A booking shown in conflict lists (02 BR-02-4..8, 04 BR-04-2/3). */
 export type BookingRef = {
@@ -33,7 +33,7 @@ export async function findLiveConflicts(
   },
   ex: Executor = db,
 ): Promise<BookingRef[]> {
-  await expireHolds();
+  await syncHolds();
   const now = new Date();
   const today = toWib(now).date;
   const conditions: SQL[] = [inArray(bookings.status, [...LIVE_STATUSES]), gte(bookings.tourDate, filters.from && filters.from > today ? filters.from : today)];

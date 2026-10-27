@@ -38,7 +38,7 @@ export async function loadGuidesForAvailability(ex: Executor, from: string, to: 
 
 /**
  * BR-05-2 active assignments: not released, on a live booking. Expired holds are already
- * cancelled by expireHolds(), which callers run first.
+ * cancelled (or confirmed) by syncHolds(), which callers run first.
  */
 export async function loadActiveAssignments(ex: Executor, from: string, to: string): Promise<(AssignmentForAvailability & { tourDate: string })[]> {
   return ex

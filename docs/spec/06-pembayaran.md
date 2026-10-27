@@ -1,5 +1,7 @@
 # 06 — Pembayaran (Payment)
 
+> **Diubah oleh 12:** this whole module is active only when `PAYMENT_CONFIRMATION=true`. Off (the default), bookings are paid by the system at creation (method `system`, `recorded_by` NULL) and the payment UI is hidden; see [`12` BR-12-P1–P10](12-perubahan-fase-2.md#5-business-rules).
+
 > Status: **Draft v1** · Last updated: 2026-10-25 · Depends on: [`05-pemesanan.md`](05-pemesanan.md), [`04-pengaturan.md`](04-pengaturan.md)
 
 ## 1. Purpose

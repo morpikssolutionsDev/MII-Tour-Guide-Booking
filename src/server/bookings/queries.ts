@@ -28,7 +28,7 @@ import { LIVE_STATUSES } from "@/domain/booking-status";
 import type { PriceSnapshot } from "@/domain/pricing";
 import { addDays, wibToday } from "@/domain/time";
 import { briefingForPackage } from "../settings-queries";
-import { expireHolds } from "./holds";
+import { syncHolds } from "./holds";
 
 export const BOOKING_VIEWS = ["mendatang", "menunggu-pembayaran", "perlu-persiapan", "hari-ini", "semua"] as const;
 export type BookingView = (typeof BOOKING_VIEWS)[number];
@@ -57,7 +57,7 @@ const checklistIncomplete = exists(
 
 /** 05 §3.1 list. Runs lazy expiry first (BR-05-11). */
 export async function listBookings(filters: BookingFilters) {
-  await expireHolds();
+  await syncHolds();
   const today = wibToday();
   const conditions: SQL[] = [];
   let order = [asc(bookings.tourDate), asc(bookings.slotStart)];
@@ -109,6 +109,7 @@ export async function listBookings(filters: BookingFilters) {
         id: bookings.id,
         code: bookings.code,
         groupRef: bookings.groupRef,
+        mergeGroupId: bookings.mergeGroupId,
         status: bookings.status,
         channel: bookings.channel,
         tourDate: bookings.tourDate,
@@ -138,14 +139,17 @@ export async function listBookings(filters: BookingFilters) {
   ]);
 
   const ids = rows.map((r) => r.id);
+  // Shared tours (12 BR-12-M1): members show the host's guides.
+  const guideOwnerIds = [...new Set(rows.map((r) => r.mergeGroupId ?? r.id))];
+  const groupIds = [...new Set(rows.map((r) => r.mergeGroupId).filter(Boolean))] as string[];
   const customerIds = [...new Set(rows.map((r) => r.customerId))];
-  const [assigned, visits, progress] = await Promise.all([
-    ids.length
+  const [assigned, visits, progress, groupCodes] = await Promise.all([
+    guideOwnerIds.length
       ? db
           .select({ bookingId: bookingGuides.bookingId, name: guides.displayName })
           .from(bookingGuides)
           .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
-          .where(and(inArray(bookingGuides.bookingId, ids), isNull(bookingGuides.releasedAt)))
+          .where(and(inArray(bookingGuides.bookingId, guideOwnerIds), isNull(bookingGuides.releasedAt)))
       : [],
     customerVisitCounts(customerIds),
     ids.length
@@ -155,6 +159,9 @@ export async function listBookings(filters: BookingFilters) {
           .where(inArray(bookingChecklistItems.bookingId, ids))
           .groupBy(bookingChecklistItems.bookingId)
       : [],
+    groupIds.length
+      ? db.select({ id: bookings.id, code: bookings.code, groupId: bookings.mergeGroupId }).from(bookings).where(inArray(bookings.mergeGroupId, groupIds))
+      : [],
   ]);
 
   return {
@@ -162,7 +169,8 @@ export async function listBookings(filters: BookingFilters) {
     page,
     rows: rows.map((r) => ({
       ...r,
-      guideNames: assigned.filter((a) => a.bookingId === r.id).map((a) => a.name),
+      guideNames: assigned.filter((a) => a.bookingId === (r.mergeGroupId ?? r.id)).map((a) => a.name),
+      mergedWith: r.mergeGroupId ? groupCodes.filter((g) => g.groupId === r.mergeGroupId && g.id !== r.id).map((g) => g.code) : [],
       visits: visits.get(r.customerId) ?? 0,
       checklist: progress.find((p) => p.bookingId === r.id) ?? null,
     })),
@@ -184,7 +192,7 @@ export async function customerVisitCounts(customerIds: string[]) {
 
 /** Everything the booking detail page shows (05 §3.3 + 06/07/09/10 sections). */
 export async function getBookingDetail(id: string) {
-  await expireHolds();
+  await syncHolds();
   const [row] = await db
     .select({
       booking: bookings,
@@ -202,6 +210,7 @@ export async function getBookingDetail(id: string) {
     .where(eq(bookings.id, id));
   if (!row) return null;
   const b = row.booking;
+  const guidesOf = b.mergeGroupId ?? b.id;
 
   const [assigned, paymentRows, checklist, events, messages, fb, linked, visits, briefing] = await Promise.all([
     db
@@ -211,11 +220,11 @@ export async function getBookingDetail(id: string) {
       })
       .from(bookingGuides)
       .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
-      .where(and(eq(bookingGuides.bookingId, id), isNull(bookingGuides.releasedAt))),
+      .where(and(eq(bookingGuides.bookingId, guidesOf), isNull(bookingGuides.releasedAt))),
     db
       .select({ payment: payments, recordedByName: users.name })
       .from(payments)
-      .innerJoin(users, eq(users.id, payments.recordedBy))
+      .leftJoin(users, eq(users.id, payments.recordedBy))
       .where(eq(payments.bookingId, id))
       .orderBy(desc(payments.paidAt), desc(payments.createdAt)),
     db
@@ -244,6 +253,8 @@ export async function getBookingDetail(id: string) {
 
   const voidedByIds = paymentRows.map((p) => p.payment.voidedBy).filter(Boolean) as string[];
   const voidedBy = voidedByIds.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, voidedByIds)) : [];
+  const ackByIds = assigned.map((a) => a.assignment.acknowledgedBy).filter(Boolean) as string[];
+  const ackBy = ackByIds.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ackByIds)) : [];
   const guideIdsInEvents = new Set<string>();
   for (const e of events) {
     const payload = e.event.payload as { guideId?: string };
@@ -276,7 +287,12 @@ export async function getBookingDetail(id: string) {
     languageCode: row.languageCode,
     packageName: row.packageName,
     createdByName: row.createdByName,
-    guides: assigned.map((a) => ({ ...a.guide, ...a.assignment, assignmentId: a.assignment.id })),
+    guides: assigned.map((a) => ({
+      ...a.guide,
+      ...a.assignment,
+      assignmentId: a.assignment.id,
+      acknowledgedByName: ackBy.find((u) => u.id === a.assignment.acknowledgedBy)?.name ?? null,
+    })),
     payments: paymentRows.map((p) => ({
       ...p.payment,
       recordedByName: p.recordedByName,
@@ -293,6 +309,38 @@ export async function getBookingDetail(id: string) {
     feedback: feedbackRow ? { ...feedbackRow, ratings, enteredByName } : null,
     linked,
     briefing,
+    group: await sharedTour(b),
+  };
+}
+
+/** 12 §3.1 "Tur gabungan": every booking served by the same guides, host first. */
+async function sharedTour(b: { id: string; mergeGroupId: string | null }) {
+  if (!b.mergeGroupId) return null;
+  const rows = await db
+    .select({
+      id: bookings.id,
+      code: bookings.code,
+      status: bookings.status,
+      people: bookings.people,
+      mergedAt: bookings.mergedAt,
+      tourDate: bookings.tourDate,
+      slotStart: bookings.slotStart,
+      customerName: customers.name,
+      nationality: customers.nationality,
+      packageName: packages.name,
+    })
+    .from(bookings)
+    .innerJoin(customers, eq(customers.id, bookings.customerId))
+    .innerJoin(packages, eq(packages.id, bookings.packageId))
+    .where(eq(bookings.mergeGroupId, b.mergeGroupId))
+    .orderBy(asc(bookings.mergedAt));
+  const hostId = b.mergeGroupId;
+  const members = [...rows.filter((r) => r.id === hostId), ...rows.filter((r) => r.id !== hostId)].map((r) => ({ ...r, isHost: r.id === hostId }));
+  return {
+    hostId,
+    hostCode: members.find((m) => m.isHost)?.code ?? "",
+    totalPeople: members.reduce((sum, m) => sum + m.people, 0),
+    members,
   };
 }
 
@@ -300,7 +348,7 @@ export type BookingDetail = NonNullable<Awaited<ReturnType<typeof getBookingDeta
 
 /** 05 §3.6 Papan Jadwal for one date. */
 export async function getScheduleBoard(date: string, opts: { includeInactive?: boolean } = {}) {
-  await expireHolds();
+  await syncHolds();
   const [slotRows, guideRows, langs, days, leaves, dayBookings] = await Promise.all([
     db.select().from(slots).orderBy(asc(slots.startTime)),
     db.select().from(guides).orderBy(asc(guides.displayName)),
@@ -322,12 +370,22 @@ export async function getScheduleBoard(date: string, opts: { includeInactive?: b
         status: bookings.status,
         people: bookings.people,
         customerName: customers.name,
+        mergeGroupId: bookings.mergeGroupId,
       })
       .from(bookingGuides)
       .innerJoin(bookings, eq(bookings.id, bookingGuides.bookingId))
       .innerJoin(customers, eq(customers.id, bookings.customerId))
       .where(and(eq(bookingGuides.tourDate, date), isNull(bookingGuides.releasedAt), sql`${bookings.status} <> 'cancelled'`)),
   ]);
+  // 12 §3.2: a shared tour sits in the host's cells once, as "{kode} +n" with the summed people.
+  const hostIds = [...new Set(dayBookings.filter((b) => b.mergeGroupId === b.bookingId).map((b) => b.bookingId))];
+  const groupTotals = hostIds.length
+    ? await db
+        .select({ hostId: bookings.mergeGroupId, n: count(), people: sql<number>`sum(${bookings.people})` })
+        .from(bookings)
+        .where(and(inArray(bookings.mergeGroupId, hostIds), sql`${bookings.status} <> 'cancelled'`))
+        .groupBy(bookings.mergeGroupId)
+    : [];
   const guidesWithBookings = new Set(dayBookings.map((b) => b.guideId));
   const slotsWithBookings = new Set(dayBookings.map((b) => b.slotId));
   return {
@@ -344,7 +402,10 @@ export async function getScheduleBoard(date: string, opts: { includeInactive?: b
         weekdays: days.filter((d) => d.guideId === g.id).map((d) => d.weekday),
         onLeave: leaves.some((l) => l.guideId === g.id),
       })),
-    bookings: dayBookings,
+    bookings: dayBookings.map(({ mergeGroupId, ...b }) => {
+      const group = mergeGroupId ? groupTotals.find((g) => g.hostId === b.bookingId) : undefined;
+      return group && group.n > 1 ? { ...b, code: `${b.code} +${group.n - 1}`, people: Number(group.people) } : b;
+    }),
   };
 }
 

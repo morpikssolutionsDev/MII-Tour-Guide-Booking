@@ -89,7 +89,13 @@ export function StepReview({
       ) : (
         <Alert variant="info">
           <Info />
-          <AlertDescription>{holdBySlot ? wr.holdInfoSlot(formatDateTime(hold.toISOString())) : wr.holdInfo(formatDateTime(hold.toISOString()), config.holdHours)}</AlertDescription>
+          <AlertDescription>
+            {!config.paymentConfirmation
+              ? wr.confirmedInfo
+              : holdBySlot
+                ? wr.holdInfoSlot(formatDateTime(hold.toISOString()))
+                : wr.holdInfo(formatDateTime(hold.toISOString()), config.holdHours)}
+          </AlertDescription>
         </Alert>
       )}
 

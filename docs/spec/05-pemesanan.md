@@ -63,6 +63,8 @@ Serves flow steps **1 (Inquiry, via channel)**, **2 (Cek Ketersediaan & Penjadwa
 
 ### 3.2 New booking wizard: `/pemesanan/baru` (admin, staff)
 
+> **Diubah oleh 12:** with `PAYMENT_CONFIRMATION` off, the wizard ends on the splash "Pemesanan berhasil dibuat" ([`12` §3.4](12-perubahan-fase-2.md#34-wizard-end-splash-pemesanan-berhasil-dibuat-flag-off)), not the payment success panel.
+
 Wizard pattern per [design-system §6.4](design-system.md#64-page-patterns). Steps: **1 Pelanggan → 2 Jadwal → 3 Tour Guide → 4 Ringkasan**. The sticky **"Ringkasan"** panel (desktop) / bottom bar (mobile) shows the live total once a package is chosen.
 
 **Pre-fill** via query parameters (each optional):
@@ -123,6 +125,8 @@ Availability refreshes automatically (debounced 300 ms) whenever language, peopl
 **Leaving the wizard** with data entered prompts "Tinggalkan halaman? Data yang belum disimpan akan hilang." The draft is kept in `sessionStorage` per tab and restored on reload.
 
 ### 3.3 Booking detail: `/pemesanan/[id]` (admin, staff)
+
+> **Diubah oleh 12:** admin can merge bookings into a shared tour ("Gabungkan pemesanan", "Tur gabungan", "Pisahkan"), see [`12` §3.1](12-perubahan-fase-2.md#31-booking-detail-pemesananid-merge-admin-only).
 
 Desktop: main column + right rail (360 px). Mobile: single column with a sticky header holding code, status, and a "Tindakan" (actions) menu.
 
@@ -286,6 +290,8 @@ Append-only: there is no update or delete code path.
 
 1. **BR-05-1 — Date window.** `today ≤ tour_date ≤ today + booking_horizon_days` (WIB). Dates outside the window are disabled in the picker and rejected server-side.
 2. **BR-05-2 — Active assignment.** A `booking_guides` row is *active* when `released_at IS NULL` **and** its booking status is `awaiting_payment` (with `hold_expires_at > now`), `confirmed`, or `ready`. Lazy expiry (BR-05-11) runs before every availability computation.
+
+    > **Diubah oleh 12:** in a merged group only the host booking holds active assignments ([BR-12-M1](12-perubahan-fase-2.md#5-business-rules)).
 3. **BR-05-3 — Slot availability.** For a date, language L, and `guidesNeeded` n (from [BR-03-1](03-harga.md#5-business-rules)), each **active** slot S is evaluated as follows:
    - **Hidden** if `tour_date = today` and `S.start ≤ now` (WIB).
    - `eligible(S)` = guides that are *working* on the date ([BR-02-1](02-tour-guide.md#5-business-rules)), speak L, and have no active assignment on (date, S).
@@ -328,6 +334,8 @@ Append-only: there is no update or delete code path.
 
     It must be idempotent and safe under concurrent calls: use a conditional `UPDATE … WHERE status = 'awaiting_payment'` and act only on the rows it changed.
 
+    > **Diubah oleh 12:** with `PAYMENT_CONFIRMATION` off there is no hold: bookings start `confirmed` with a system payment ([BR-12-P3](12-perubahan-fase-2.md#5-business-rules)), and existing holds are confirmed instead of expired ([BR-12-P4](12-perubahan-fase-2.md#5-business-rules)).
+
 ### Status and actions
 
 12. **BR-05-12 — Transitions** are validated centrally (`src/domain/booking-status.ts`), per the [overview state diagram](00-overview.md#7-booking-lifecycle). Any action requested from a status it doesn't allow fails with "Tindakan tidak tersedia untuk status {label}."
@@ -339,6 +347,8 @@ Append-only: there is no update or delete code path.
     - appends `rescheduled` (before / after / reason), plus `guide_released` / `guide_assigned`.
 
     `hold_expires_at` is **not** extended, but is capped to the new slot start if that is earlier. Effects on notices, acknowledgements, and the checklist are defined in [`07` BR-07-6](07-persiapan.md).
+
+    > **Diubah oleh 12:** merged bookings: members are split first, the host allows guide-only changes ([BR-12-M9](12-perubahan-fase-2.md#5-business-rules)). With payment confirmation off, price differences become system adjustments ([BR-12-P5](12-perubahan-fase-2.md#5-business-rules)).
 14. **BR-05-14 — Selesai / Tidak Hadir** are allowed from `confirmed` or `ready` once `now ≥ tour_date + slot_start` (WIB), by assigned guides ([`08`](08-portal-guide.md)), staff, or admin. They set `completed_at` / `completed_by` and append `status_changed`. `completed` triggers the feedback request ([`10`](10-ulasan.md)).
 15. **BR-05-15 — Cancel** is allowed from `awaiting_payment`, `confirmed`, or `ready` until the slot ends. It:
     - sets the cancel fields;
@@ -346,6 +356,8 @@ Append-only: there is no update or delete code path.
     - records an optional refund adjustment (06);
     - appends `cancelled`;
     - notifies the tourist and any guide with `notified_at` set.
+
+    > **Diubah oleh 12:** cancelling a merged booking leaves the group or hands the guides to the next host ([BR-12-M9](12-perubahan-fase-2.md#5-business-rules)). With payment confirmation off there is no refund input ([BR-12-P6](12-perubahan-fase-2.md#5-business-rules)).
 16. **BR-05-16 — Inline edits** (`special_needs`, `internal_notes`) are allowed in any non-terminal status. Each save appends a `notes_updated` event with the before and after text.
 17. **BR-05-17 — Linked bookings.** "Buat pemesanan terkait" sets `group_ref` on the new booking to the source booking's `group_ref`, or its `code` if empty (also written back to the source). Linked bookings are independent in status, payment, and guides. They only display each other as "Terkait".
 18. **BR-05-18 — One language per booking.** Guides on a booking must all speak `language_id` (BR-05-3 guarantees this; it is re-checked on save).

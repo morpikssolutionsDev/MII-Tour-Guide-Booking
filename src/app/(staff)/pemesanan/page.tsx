@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Link2, Plus, Repeat } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link2, Merge, Plus, Repeat } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChannelBadge, StatusBadge } from "@/components/common/badges";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BOOKING_STATUSES, CHANNELS, type BookingStatus, type Channel } from "@/db/schema";
 import { isValidDate } from "@/domain/time";
 import { t } from "@/i18n/id";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { formatDateMedium, formatDuration, formatRupiah, formatSlot } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BOOKING_VIEWS, bookingFilterOptions, listBookings, PAGE_SIZE, type BookingListRow, type BookingView } from "@/server/bookings/queries";
@@ -28,8 +29,12 @@ const TOUR_DATE = "Tanggal tur";
 export default async function BookingsPage({ searchParams }: { searchParams: Search }) {
   await requireRole("admin", "staff");
   const p = await searchParams;
-  const view: BookingView = BOOKING_VIEWS.includes(p.view as BookingView) ? (p.view as BookingView) : "mendatang";
-  const status = BOOKING_STATUSES.includes(p.status as BookingStatus) ? (p.status as BookingStatus) : undefined;
+  // 12 §3.5: without payment confirmation nothing waits for payment.
+  const paymentConfirmation = isPaymentConfirmationEnabled();
+  const views: readonly BookingView[] = paymentConfirmation ? BOOKING_VIEWS : BOOKING_VIEWS.filter((v) => v !== "menunggu-pembayaran");
+  const statuses: readonly BookingStatus[] = paymentConfirmation ? BOOKING_STATUSES : BOOKING_STATUSES.filter((s) => s !== "awaiting_payment");
+  const view: BookingView = views.includes(p.view as BookingView) ? (p.view as BookingView) : "mendatang";
+  const status = statuses.includes(p.status as BookingStatus) ? (p.status as BookingStatus) : undefined;
   const page = Math.max(1, Number(p.page) || 1);
   const [{ rows, total }, options] = await Promise.all([
     listBookings({
@@ -67,14 +72,14 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
           </Button>
         }
       />
-      <UrlTabs param="view" active={view} tabs={BOOKING_VIEWS.map((v) => ({ value: v, label: sb.views[v] }))} />
+      <UrlTabs param="view" active={view} tabs={views.map((v) => ({ value: v, label: sb.views[v] }))} />
       <FilterBar
         search={<SearchFilter placeholder={sb.searchPlaceholder} />}
         params={["status", "kanal", "bahasa", "guide", "staf", "dari", "sampai"]}
         chips={<FilterChips param="kanal" allLabel={sb.all.channel} options={CHANNELS.map((c) => ({ value: c, label: t.channels[c] }))} />}
       >
         <FilterField label={sb.filters.status}>
-          <SelectFilter param="status" label={sb.filters.status} allLabel={sb.all.status} options={BOOKING_STATUSES.map((s) => ({ value: s, label: t.bookingStatus[s] }))} />
+          <SelectFilter param="status" label={sb.filters.status} allLabel={sb.all.status} options={statuses.map((s) => ({ value: s, label: t.bookingStatus[s] }))} />
         </FilterField>
         <FilterField label={sb.filters.channel}>
           <SelectFilter param="kanal" label={sb.filters.channel} allLabel={sb.all.channel} options={CHANNELS.map((c) => ({ value: c, label: t.channels[c] }))} />
@@ -126,6 +131,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
                       <Link href={`/pemesanan/${r.id}`} className="flex items-center gap-1 font-medium tabular after:absolute after:inset-0">
                         {r.code}
                         {r.groupRef && <Link2 className="size-3.5 text-muted-foreground" aria-label={sb.linked} />}
+                        {r.mergedWith.length > 0 && <Merge className="size-3.5 text-danau-700" aria-label={t.merge.listTooltip(r.mergedWith.join(", "))} />}
                       </Link>
                     </TableCell>
                     <TableCell>
@@ -160,7 +166,10 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
               <li key={r.id}>
                 <Link href={`/pemesanan/${r.id}`} className="block rounded-lg border bg-card p-4 shadow-card">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-semibold tabular">{r.code}</span>
+                    <span className="flex items-center gap-1 font-semibold tabular">
+                      {r.code}
+                      {r.mergedWith.length > 0 && <Merge className="size-3.5 text-danau-700" aria-label={t.merge.listTooltip(r.mergedWith.join(", "))} />}
+                    </span>
                     <StatusLine row={r} now={now} />
                   </div>
                   <p className="mt-1 font-medium">

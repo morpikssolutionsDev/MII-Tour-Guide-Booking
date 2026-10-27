@@ -1,14 +1,14 @@
 import "server-only";
 import { and, count, desc, eq, gte, isNull, like, lte, or, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
-import { bookings, notifications, users } from "@/db/schema";
+import { bookings, notifications, users, type NotificationChannel } from "@/db/schema";
 import { wibToUtc } from "@/domain/time";
 
 export const OUTBOX_PAGE = 50;
 
 export type OutboxFilters = {
   q?: string;
-  channel?: "in_app" | "whatsapp_mock";
+  channel?: NotificationChannel;
   eventKey?: string;
   from?: string;
   to?: string;
@@ -20,7 +20,7 @@ export async function listOutbox(filters: OutboxFilters) {
   const conditions: SQL[] = [];
   if (filters.q) {
     const qq = `%${filters.q}%`;
-    conditions.push(or(like(notifications.recipientName, qq), like(notifications.recipientPhone, qq), like(bookings.code, qq))!);
+    conditions.push(or(like(notifications.recipientName, qq), like(notifications.recipientPhone, qq), like(notifications.recipientEmail, qq), like(bookings.code, qq))!);
   }
   if (filters.channel) conditions.push(eq(notifications.channel, filters.channel));
   if (filters.eventKey) conditions.push(eq(notifications.eventKey, filters.eventKey));

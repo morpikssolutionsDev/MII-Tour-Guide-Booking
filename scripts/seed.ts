@@ -11,6 +11,7 @@ import { addDays, daysBetween, isoWeekRange, toWib, wibToUtc } from "../src/doma
 import * as s from "../src/db/schema";
 import { client, db, target } from "./db";
 import { seedNotifications } from "./seed-notifications";
+import { seedPhase2 } from "./seed-phase2";
 import * as data from "./seed-data";
 
 /* ---------------- deterministic randomness ---------------- */
@@ -63,7 +64,9 @@ async function main() {
   const now = new Date();
   const nowWib = toWib(now);
   const today = nowWib.date;
-  console.log(`Seeding ${target} relative to ${today} ${nowWib.time} WIB…`);
+  // 12 BR-12-P1: same switch as the app. Off (default) = every booking paid by the system at creation.
+  const paymentConfirmation = process.env.PAYMENT_CONFIRMATION === "true";
+  console.log(`Seeding ${target} relative to ${today} ${nowWib.time} WIB (payment confirmation ${paymentConfirmation ? "on" : "off"})…`);
   await reset();
 
   /* ----- users ----- */
@@ -454,9 +457,9 @@ async function main() {
     let cancel: { reason: s.CancelReason; at: Date; by: string | null; detail?: string } | null = null;
     const holdStillOpen = holdExpiry > now;
 
-    if (holdStillOpen && !tourStarted && chance(0.55)) {
+    if (paymentConfirmation && holdStillOpen && !tourStarted && chance(0.55)) {
       status = "awaiting_payment";
-    } else if (chance(tourStarted ? 0.05 : 0.04)) {
+    } else if (paymentConfirmation && chance(tourStarted ? 0.05 : 0.04)) {
       // Never paid: expired automatically.
       status = "cancelled";
       cancel = { reason: "expired", at: holdExpiry, by: null };
@@ -465,9 +468,11 @@ async function main() {
     }
 
     const paidAt =
-      status === "confirmed"
-        ? minDate(plusMinutes(g.createdAt, int(10, 60 * 18)), plusMinutes(slotStartAt, -15), plusMinutes(now, -5))
-        : null;
+      status !== "confirmed"
+        ? null
+        : paymentConfirmation
+          ? minDate(plusMinutes(g.createdAt, int(10, 60 * 18)), plusMinutes(slotStartAt, -15), plusMinutes(now, -5))
+          : new Date(g.createdAt.getTime() + 1000);
     if (paidAt && paidAt < g.createdAt) {
       // Same-day bookings close to the slot: paid right away.
       paidAt.setTime(plusMinutes(g.createdAt, 2).getTime());
@@ -501,7 +506,12 @@ async function main() {
     let completedBy: string | null = null;
     let checklistAllChecked = false;
 
-    if (paidAt) {
+    if (paidAt && !paymentConfirmation) {
+      // 12 BR-12-P3: confirmed at creation with a system payment.
+      paymentRows.push({ id: uuid(), bookingId: g.id, kind: "payment", method: "system", amount: snapshot.total, paidAt: iso(paidAt), recordedBy: null, createdAt: iso(paidAt) });
+      event(g.id, "payment_confirmed", paidAt, null, { method: "system", amount: snapshot.total, by: "system" });
+      event(g.id, "status_changed", paidAt, null, { from: null, to: "confirmed", cause: "system_payment" });
+    } else if (paidAt) {
       const method = g.channel === "on_the_spot" ? weighted([["cash", 5], ["qris", 4], ["edc", 2]] as const) : weighted([["bank_transfer", 5], ["qris", 4], ["edc", 1], ["cash", 1]] as const);
       const mismatch = chance(0.03);
       const amount = mismatch ? snapshot.total - pick([5_000, 6_500, 50_000]) : snapshot.total;
@@ -518,6 +528,8 @@ async function main() {
       });
       event(g.id, "payment_confirmed", paidAt, creatorId, { method, amount, mismatch });
       event(g.id, "status_changed", paidAt, creatorId, { from: "awaiting_payment", to: "confirmed" });
+    }
+    if (paidAt) {
 
       const shortNotice = daysBetween(toWib(paidAt).date, g.tourDate) < data.SETTINGS.notice_days;
       for (const row of assignedRows) {
@@ -577,7 +589,8 @@ async function main() {
         event(g.id, "hold_expired", cancel.at, null, {});
       } else {
         event(g.id, "cancelled", cancel.at, cancel.by, { reason: cancel.reason });
-        if (paidAt && cancel.reason === "tourist_request" && chance(0.7)) {
+        // No refunds are recorded while payment confirmation is off (12 BR-12-P6).
+        if (paymentConfirmation && paidAt && cancel.reason === "tourist_request" && chance(0.7)) {
           const refund = Math.round(snapshot.total * 0.5);
           paymentRows.push({
             id: uuid(),
@@ -693,9 +706,11 @@ async function main() {
   await insertMany(s.bookingEvents, eventRows);
   await insertMany(s.feedback, feedbackRows);
   await insertMany(s.feedbackGuideRatings, ratingRows);
+  const phase2 = await seedPhase2(now, today, admin.id);
   const notificationCount = await seedNotifications(now, {
     paymentInstructions: data.SETTINGS.payment_instructions_en,
     lowRatingThreshold: data.SETTINGS.low_rating_threshold,
+    paymentConfirmation,
   });
 
   const byStatus = bookingRows.reduce<Record<string, number>>((acc, b) => {
@@ -705,6 +720,7 @@ async function main() {
   console.log(`Users: ${staff.length + guideRows.length}, guides: ${guideRows.length}, customers: ${usedCustomers.size}`);
   console.log(`Bookings: ${bookingRows.length}`, byStatus);
   console.log(`Payments: ${paymentRows.length}, feedback: ${feedbackRows.length}, events: ${eventRows.length}, notifications: ${notificationCount}`);
+  console.log(`Phase 2: ${phase2.merged} shared tours, ${phase2.forced} force-confirmed guides, ${phase2.emails} email rows`);
   console.log(`Logins (password "${data.PASSWORD}"): ${[...staff.map((u) => u.email), ...guideRows.map((g) => g.email)].join(", ")}`);
 }
 

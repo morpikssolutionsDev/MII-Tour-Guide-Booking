@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   bookingGuides,
@@ -18,7 +18,7 @@ import {
 } from "@/db/schema";
 import type { PriceSnapshot } from "@/domain/pricing";
 import { addDays, toWib, wibToUtc } from "@/domain/time";
-import { expireHolds } from "../bookings/holds";
+import { syncHolds } from "../bookings/holds";
 import { feedbackUrl } from "../feedback/tokens";
 import { briefingForPackage } from "../settings-queries";
 
@@ -46,6 +46,8 @@ export type TourCardView = {
   /** Display-only "Berlangsung" (BR-08-6). */
   ongoing: boolean;
   started: boolean;
+  /** Other bookings sharing this tour (12 BR-12-M13); `people` is then the group total. */
+  mergedCount: number;
 };
 
 /** Assignments visible to the guide: active, or released after being notified (BR-08-1/2). */
@@ -91,6 +93,14 @@ async function toCards(guideId: string, rows: Awaited<ReturnType<typeof guideTou
         .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
         .where(and(inArray(bookingGuides.bookingId, ids), isNull(bookingGuides.releasedAt), ne(bookingGuides.guideId, guideId)))
     : [];
+  // 12 §3.3: a shared tour shows once (the host card) with the total people.
+  const groups = ids.length
+    ? await db
+        .select({ hostId: bookings.mergeGroupId, n: count(), people: sql<number>`sum(${bookings.people})` })
+        .from(bookings)
+        .where(and(inArray(bookings.mergeGroupId, ids), ne(bookings.status, "cancelled")))
+        .groupBy(bookings.mergeGroupId)
+    : [];
   const seen = new Set<string>();
   return relevant
     .filter((r) => (seen.has(r.booking.id) ? false : (seen.add(r.booking.id), true)))
@@ -109,7 +119,8 @@ async function toCards(guideId: string, rows: Awaited<ReturnType<typeof guideTou
         nationality: r.nationality,
         languageCode: r.languageCode,
         languageName: r.languageName,
-        people: r.booking.people,
+        people: Number(groups.find((g) => g.hostId === r.booking.id)?.people ?? r.booking.people),
+        mergedCount: Math.max(0, (groups.find((g) => g.hostId === r.booking.id)?.n ?? 1) - 1),
         packageName: (r.booking.priceSnapshot as PriceSnapshot).package.name ?? r.packageName,
         coGuides: others.filter((o) => o.bookingId === r.booking.id).map((o) => o.name),
         acknowledged: Boolean(r.assignment.acknowledgedAt),
@@ -122,7 +133,7 @@ async function toCards(guideId: string, rows: Awaited<ReturnType<typeof guideTou
 
 /** 08 §3.1 Hari Ini. */
 export async function getGuideToday(guideId: string) {
-  await expireHolds();
+  await syncHolds();
   const now = new Date();
   const today = toWib(now).date;
   const upcomingRows = await guideTourRows(guideId, { from: today });
@@ -135,7 +146,7 @@ export async function getGuideToday(guideId: string) {
 
 /** 08 §3.2 Jadwal: upcoming (from tomorrow), a calendar month, or the last 90 days. */
 export async function listGuideTours(guideId: string, view: "mendatang" | "kalender" | "riwayat", month?: string) {
-  await expireHolds();
+  await syncHolds();
   const now = new Date();
   const today = toWib(now).date;
   let from: string;
@@ -173,16 +184,39 @@ export async function listGuideTours(guideId: string, view: "mendatang" | "kalen
 
 /** 08 §3.3 tour detail (GuideTourView). Null when the guide may not see it (→ 404, BR-08-1). */
 export async function getGuideTour(guideId: string, bookingId: string) {
-  await expireHolds();
+  await syncHolds();
   const now = new Date();
-  const rows = await guideTourRows(guideId, { ids: [bookingId] });
+  // 12 BR-12-M13: a member of a shared tour is reached through its host's assignment.
+  const [requested] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
+  if (!requested) return null;
+  const hostId = requested.mergeGroupId ?? requested.id;
+  const rows = await guideTourRows(guideId, { ids: [hostId] });
   const own = rows[0];
   if (!own) return null;
   const isReleased = Boolean(own.assignment.releasedAt);
   if (own.booking.status === "cancelled" && !own.assignment.notifiedAt) return null;
   if (isReleased && own.booking.status !== "cancelled") return null;
-  const b = own.booking;
+  const b = requested;
   const snapshot = b.priceSnapshot as PriceSnapshot;
+  const groupRows = requested.mergeGroupId
+    ? await db
+        .select({
+          bookingId: bookings.id,
+          code: bookings.code,
+          status: bookings.status,
+          people: bookings.people,
+          packageId: bookings.packageId,
+          packageName: packages.name,
+          specialNeeds: bookings.specialNeeds,
+          customerName: customers.name,
+          nationality: customers.nationality,
+        })
+        .from(bookings)
+        .innerJoin(customers, eq(customers.id, bookings.customerId))
+        .innerJoin(packages, eq(packages.id, bookings.packageId))
+        .where(and(eq(bookings.mergeGroupId, requested.mergeGroupId), ne(bookings.status, "cancelled")))
+        .orderBy(asc(bookings.mergedAt))
+    : [];
 
   const [customer, team, briefing, fb] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, b.customerId), columns: { name: true, nationality: true, phoneE164: true } }),
@@ -190,8 +224,8 @@ export async function getGuideTour(guideId: string, bookingId: string) {
       .select({ guideId: guides.id, name: guides.displayName, phone: guides.phoneE164, acknowledgedAt: bookingGuides.acknowledgedAt })
       .from(bookingGuides)
       .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
-      .where(and(eq(bookingGuides.bookingId, b.id), isNull(bookingGuides.releasedAt), ne(bookingGuides.guideId, guideId))),
-    briefingForPackage(b.packageId),
+      .where(and(eq(bookingGuides.bookingId, hostId), isNull(bookingGuides.releasedAt), ne(bookingGuides.guideId, guideId))),
+    groupBriefing(groupRows.length ? [...new Set(groupRows.map((g) => g.packageId))] : [b.packageId]),
     db.select().from(feedback).where(eq(feedback.bookingId, b.id)),
   ]);
   const feedbackRow = fb[0] ?? null;
@@ -236,6 +270,13 @@ export async function getGuideTour(guideId: string, bookingId: string) {
     specialNeeds: b.specialNeeds,
     team,
     briefing,
+    group: groupRows.length
+      ? {
+          hostId,
+          totalPeople: groupRows.reduce((sum, g) => sum + g.people, 0),
+          bookings: groupRows.map((g) => ({ bookingId: g.bookingId, code: g.code, status: g.status, people: g.people, packageName: g.packageName, specialNeeds: g.specialNeeds, customerName: g.customerName, nationality: g.nationality, isHost: g.bookingId === hostId })),
+        }
+      : null,
     feedback: feedbackRow
       ? {
           submitted: Boolean(feedbackRow.submittedAt),
@@ -253,6 +294,13 @@ export async function getGuideTour(guideId: string, bookingId: string) {
 }
 
 export type GuideTourDetail = NonNullable<Awaited<ReturnType<typeof getGuideTour>>>;
+
+/** 12 §3.3: a shared tour gets the briefing of every package in it, without duplicates. */
+async function groupBriefing(packageIds: string[]) {
+  const lists = await Promise.all(packageIds.map((id) => briefingForPackage(id)));
+  const seen = new Set<string>();
+  return lists.flat().filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+}
 
 export async function getGuideProfile(guideId: string) {
   const guide = await db.query.guides.findFirst({ where: eq(guides.id, guideId) });

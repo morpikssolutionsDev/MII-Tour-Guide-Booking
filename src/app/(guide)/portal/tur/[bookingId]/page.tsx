@@ -1,4 +1,5 @@
 import { MessageCircle, Phone } from "lucide-react";
+import Link from "next/link";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { LanguagePill, Pill, ShortNoticeBadge, StatusBadge } from "@/components/common/badges";
@@ -79,6 +80,25 @@ async function Tour({ params }: { params: Promise<{ bookingId: string }> }) {
         )}
       </Section>
 
+      {tour.group && (
+        <Section title={t.merge.groupTitle(tour.group.totalPeople)}>
+          <ul className="divide-y text-sm">
+            {tour.group.bookings.map((g) => (
+              <li key={g.bookingId} className="py-2">
+                <Link href={`/portal/tur/${g.bookingId}`} className={g.bookingId === tour.bookingId ? "font-semibold text-danau-700" : "font-semibold hover:underline"}>
+                  {g.customerName}
+                </Link>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {countryNameId(g.nationality)} · {t.common.people(g.people)} · {g.packageName} · <span className="tabular">{g.code}</span>
+                </span>
+                {g.specialNeeds && <p className="mt-0.5 text-xs text-senja-800">{g.specialNeeds}</p>}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {tour.specialNeeds && (
         <Alert variant="info">
           <AlertDescription>
@@ -150,6 +170,7 @@ async function Tour({ params }: { params: Promise<{ bookingId: string }> }) {
         customerPhone={tour.customer.phone}
         guidesToRate={tour.guidesToRate}
         meName={me.name}
+        groupHostId={tour.group && tour.group.bookings.length > 1 ? tour.group.hostId : null}
       />
     </div>
   );

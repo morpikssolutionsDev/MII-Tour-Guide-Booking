@@ -1,8 +1,8 @@
-import { MessageCircle, Phone, TriangleAlert } from "lucide-react";
+import { BadgeCheck, MessageCircle, Phone, TriangleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChannelBadge, ReturningBadge, ShortNoticeBadge, StatusBadge } from "@/components/common/badges";
+import { ChannelBadge, Pill, ReturningBadge, ShortNoticeBadge, StatusBadge } from "@/components/common/badges";
 import { MessageRow } from "@/components/common/message-row";
 import { PageContainer } from "@/components/common/page-header";
 import { PriceSummary } from "@/components/common/price-summary";
@@ -10,9 +10,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Disclosure } from "@/components/common/disclosure";
 import { Button } from "@/components/ui/button";
 import { canCancel, canComplete, canReschedule, canVoidPayment, LIVE_STATUSES, TERMINAL_STATUSES } from "@/domain/booking-status";
+import { mergeableStatuses } from "@/domain/merge";
 import { formatPhone, waNumber } from "@/domain/phone";
+import { wibToUtc } from "@/domain/time";
 import { t } from "@/i18n/id";
 import { countryNameId, formatDateLong, formatDateTime, formatDuration, formatRelative, formatSlot } from "@/lib/format";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { getBookingDetail } from "@/server/bookings/queries";
 import { feedbackUrl } from "@/server/feedback/tokens";
 import { requireRole } from "@/server/session";
@@ -21,6 +24,7 @@ import { BriefingCard } from "../../pengaturan/materi/briefing-form";
 import { BookingActions } from "./booking-actions";
 import { ChecklistPanel } from "./checklist-panel";
 import { FeedbackSection } from "./feedback-section";
+import { MergeButton, GroupPanel } from "./merge-panel";
 import { NotesEditor } from "./notes-editor";
 import { PaymentSection } from "./payment-section";
 import { SuccessPanel } from "./success-panel";
@@ -48,9 +52,17 @@ export default async function BookingDetailPage({
   const shortNotice = d.guides.some((g) => g.shortNotice);
   const holdRemaining = b.holdExpiresAt ? Date.parse(b.holdExpiresAt) - now.getTime() : null;
   const bookingCreatedMessage = d.messages.find((m) => m.eventKey === "booking_created")?.body ?? null;
+  // 12 BR-12-P7: without payment confirmation the payment UI is hidden; bookings are paid by the system.
+  const paymentConfirmation = isPaymentConfirmationEnabled();
+
+  // 12 §3.1: admin may merge into this booking when it serves its own (or its group's) guides.
+  const isGroupMember = Boolean(b.mergeGroupId && b.mergeGroupId !== b.id);
+  const slotStarted = now >= wibToUtc(b.tourDate, b.slotStart);
+  const canMerge =
+    me.role === "admin" && !isGroupMember && !slotStarted && mergeableStatuses(paymentConfirmation).includes(b.status) && d.guides.length > 0;
 
   const flags = {
-    markPaid: b.status === "awaiting_payment",
+    markPaid: paymentConfirmation && b.status === "awaiting_payment",
     reschedule: canReschedule(b, now),
     complete: canComplete(b, now),
     cancel: canCancel(b, now),
@@ -91,7 +103,20 @@ export default async function BookingDetailPage({
         </dl>
       </Card>
 
-      <Card title={sd.guides}>
+      <section className="rounded-lg border bg-card p-5 shadow-card">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">
+            {sd.guides}
+            {isGroupMember && d.group && <span className="ml-2 text-sm font-normal text-muted-foreground">{t.merge.fromHost(d.group.hostCode)}</span>}
+          </h2>
+          {canMerge && (
+            <MergeButton
+              hostId={b.id}
+              subtitle={t.merge.subtitle(formatDateLong(b.tourDate), formatSlot(b.slotStart, b.slotEnd), d.languageName)}
+              guideNames={d.guides.map((g) => g.displayName)}
+            />
+          )}
+        </div>
         <ul className="space-y-2">
           {d.guides.map((g) => (
             <li key={g.assignmentId} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -105,7 +130,7 @@ export default async function BookingDetailPage({
             </li>
           ))}
         </ul>
-      </Card>
+      </section>
 
       <Card title={sd.addons}>
         {d.snapshot.addons.length === 0 && d.snapshot.facilities.length === 0 ? (
@@ -134,17 +159,25 @@ export default async function BookingDetailPage({
         </div>
       </Card>
 
-      <Card title={sd.payment}>
-        <PaymentSection
-          bookingId={b.id}
-          summary={d.paymentSummary}
-          payments={d.payments}
-          emptyText={holdRemaining && holdRemaining > 0 ? t.payment.empty(formatRelative(b.holdExpiresAt!, now)) : t.payment.emptyNoHold}
-          canAdjust={d.paymentSummary.hasPayment && b.status !== "awaiting_payment"}
-          voidablePaymentId={me.role === "admin" && paymentRow && !hasAdjustments && canVoidPayment(b, now) ? paymentRow.id : null}
-          holdHours={settings.hold_expiry_hours}
-        />
-      </Card>
+      {paymentConfirmation && (
+        <Card title={sd.payment}>
+          <PaymentSection
+            bookingId={b.id}
+            summary={d.paymentSummary}
+            payments={d.payments}
+            emptyText={holdRemaining && holdRemaining > 0 ? t.payment.empty(formatRelative(b.holdExpiresAt!, now)) : t.payment.emptyNoHold}
+            canAdjust={d.paymentSummary.hasPayment && b.status !== "awaiting_payment"}
+            voidablePaymentId={me.role === "admin" && paymentRow && paymentRow.method !== "system" && !hasAdjustments && canVoidPayment(b, now) ? paymentRow.id : null}
+            holdHours={settings.hold_expiry_hours}
+          />
+        </Card>
+      )}
+
+      {d.group && (
+        <Card title={t.merge.groupTitle(d.group.totalPeople)}>
+          <GroupPanel currentId={b.id} members={d.group.members} canSplit={me.role === "admin" && !slotStarted} />
+        </Card>
+      )}
 
       {d.checklist.length > 0 && (
         <Card title={t.preparation.title}>
@@ -157,7 +190,15 @@ export default async function BookingDetailPage({
           <ChecklistPanel
             bookingId={b.id}
             items={d.checklist}
-            guides={d.guides.map((g) => ({ guideId: g.guideId, displayName: g.displayName, acknowledgedAt: g.acknowledgedAt, notifiedAt: g.notifiedAt }))}
+            guides={d.guides.map((g) => ({
+              guideId: g.guideId,
+              displayName: g.displayName,
+              acknowledgedAt: g.acknowledgedAt,
+              notifiedAt: g.notifiedAt,
+              acknowledgedByName: g.acknowledgedByName,
+              ackNote: g.ackNote,
+            }))}
+            canForceAck={me.role === "admin"}
             editable={b.status === "confirmed" || b.status === "ready"}
           />
         </Card>
@@ -216,6 +257,11 @@ export default async function BookingDetailPage({
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-bold tabular md:text-2xl">{b.code}</h1>
           <StatusBadge status={b.status} size="md" />
+          {!paymentConfirmation && d.paymentSummary.hasPayment && b.status !== "cancelled" && (
+            <Pill tone="rimba" icon={BadgeCheck} size="md">
+              {t.common.paidBadge}
+            </Pill>
+          )}
           <ChannelBadge channel={b.channel} />
           {shortNotice && LIVE_STATUSES.includes(b.status) && <ShortNoticeBadge />}
           {d.linked.map((l) => (
@@ -244,7 +290,7 @@ export default async function BookingDetailPage({
             <Card title={t.pricing.summary.title}>
               <PriceSummary snapshot={d.snapshot} />
               <div className="mt-4">
-                <BookingActions bookingId={b.id} code={b.code} total={b.totalAmount} paid={d.paymentSummary.paid} flags={flags} />
+                <BookingActions bookingId={b.id} code={b.code} total={b.totalAmount} paid={paymentConfirmation ? d.paymentSummary.paid : 0} flags={flags} />
               </div>
             </Card>
           </div>
@@ -259,7 +305,7 @@ export default async function BookingDetailPage({
           <Card title={t.pricing.summary.title}>
             <PriceSummary snapshot={d.snapshot} />
             <div className="mt-4">
-              <BookingActions bookingId={b.id} code={b.code} total={b.totalAmount} paid={d.paymentSummary.paid} flags={flags} />
+              <BookingActions bookingId={b.id} code={b.code} total={b.totalAmount} paid={paymentConfirmation ? d.paymentSummary.paid : 0} flags={flags} />
             </div>
           </Card>
           <Card title={sd.history}>

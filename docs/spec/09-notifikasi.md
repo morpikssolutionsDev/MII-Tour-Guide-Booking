@@ -58,6 +58,8 @@ All notifications with this `booking_id`, newest first, in the same row format, 
 
 ## 4. Data model
 
+> **Diubah oleh 12:** new channel `email` with `recipient_email`, `delivery_status`, `error`, `sent_at` and `attachment_name` ([`12` §4](12-perubahan-fase-2.md#4-data-model), [BR-12-E1–E10](12-perubahan-fase-2.md#5-business-rules)).
+
 ### `notifications`
 
 | Column | Type | Notes |
@@ -121,6 +123,8 @@ Indexes: (`recipient_user_id`, `read_at`, `created_at`), (`booking_id`), (`chann
 | `getWhatsappLink` | notificationId | admin, staff | `wa.me` URL for `whatsapp_mock` rows |
 
 ## 7. Event catalogue and templates
+
+> **Diubah oleh 12:** new events `tour_merged`, `guide_ack_forced` and `email_test`, the email for `booking_created`, and the flag-off tourist template `waBookingConfirmed` ([`12` §7](12-perubahan-fase-2.md#7-notifications)).
 
 Variables are in `{braces}`. 🟢 = in-app (Indonesian), 💬 = WhatsApp mock (English). Labels in the "Peristiwa" column are the Outbox filter labels.
 

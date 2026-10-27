@@ -56,6 +56,7 @@ export function TourCard({
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <LanguagePill code={tour.languageCode} name={tour.languageName} />
           {t.common.people(tour.people)} · {tour.packageName} · <span className="tabular">{tour.code}</span>
+          {tour.mergedCount > 0 && <span className="font-medium text-danau-700"> · {t.merge.mergedCount(tour.mergedCount + 1)}</span>}
         </p>
         {tour.coGuides.length > 0 && <p className="mt-1 text-sm text-muted-foreground">{sp.with(tour.coGuides.join(", "))}</p>}
         {rating != null && (

@@ -95,11 +95,23 @@ docs/spec/        module specs 01–11 and the design system
    | `AUTH_SECRET` | output of `npx auth secret` |
    | `STORAGE_DRIVER` | `vercel-blob` |
    | `BLOB_READ_WRITE_TOKEN` | set automatically when the Blob store is connected |
-   | `APP_BASE_URL` | the deployment URL, e.g. `https://tmii-guide.vercel.app` (used in feedback links) |
+   | `APP_BASE_URL` | the deployment URL, e.g. `https://tmii-guide.vercel.app` (used in feedback and email links) |
+   | `PAYMENT_CONFIRMATION` | leave unset (off). Set to `true` only to bring back manual payment confirmation |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | your mail provider, e.g. `smtp.gmail.com`, `465`, `true` |
+   | `SMTP_USER`, `SMTP_PASSWORD` | the mailbox login (for Gmail, an app password) |
+   | `SMTP_FROM` | sender, e.g. `"TMII Tour Guide" <noreply@example.com>` |
 
-4. Deploy. No cron job is needed: expired payment holds are released lazily whenever bookings are read.
+   Environment variables only apply to new deployments: after changing one, redeploy.
+
+4. **After pulling new code with a migration**, run `npm run db:migrate:turso` *before* the new deployment goes live.
+5. Deploy. No cron job is needed: pending bookings are confirmed (or, with payment confirmation on, expired) lazily whenever bookings are read.
+6. Turn on team email in **Pengaturan → Email**: add recipients and press "Kirim email uji" to check the SMTP settings.
 
 ## Prototype notes
+
+- **Payment confirmation is off by default** ([`12` §B](docs/spec/12-perubahan-fase-2.md)). Every new booking is confirmed and recorded as paid by the system ("Sistem"). Set `PAYMENT_CONFIRMATION=true` (and redeploy) to bring back "Menunggu pembayaran", "Tandai Lunas" and hold expiry. `npm run db:seed` follows the same switch.
+- **Team email** is sent when a booking is created, with a `pemesanan-{kode}.xlsx` attachment. Every email is logged in the Outbox (channel "Email") with Terkirim/Gagal and a "Kirim ulang" button. To test locally without a real mailbox, run an SMTP sink such as `npx maildev` and set `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_FROM=...` in `.env`.
+- **Shared tours (merge)** and **force confirm** are admin-only, on the booking detail page.
 
 - **WhatsApp is mocked.** Messages to tourists are written to the outbox (`/outbox`, admin only) with a "Buka di WhatsApp" link instead of being sent.
 - **Holiday dates are estimates.** The seeded Indonesian holidays use exact dates for fixed holidays. Lunar-calendar ones (Islamic, Chinese, Saka, Buddhist) are estimates, so check them against the official SKB and edit them under **Harga → Hari Libur**.

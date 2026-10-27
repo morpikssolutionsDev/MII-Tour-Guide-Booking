@@ -13,7 +13,7 @@ const DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString();
 const plusMinutes = (at: string, minutes: number) => new Date(Date.parse(at) + minutes * 60_000).toISOString();
 
-export async function seedNotifications(now: Date, opts: { paymentInstructions: string; lowRatingThreshold: number }) {
+export async function seedNotifications(now: Date, opts: { paymentInstructions: string; lowRatingThreshold: number; paymentConfirmation: boolean }) {
   const since = iso(new Date(now.getTime() - 14 * DAY));
   const baseUrl = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -103,11 +103,20 @@ export async function seedNotifications(now: Date, opts: { paymentInstructions: 
     });
 
     if (b.createdAt! >= since) {
-      rows.push(wa("booking_created", tpl.waBookingCreated({ ...facts, holdExpiresAt: b.holdExpiresAt ?? plusMinutes(b.createdAt!, 24 * 60) }, opts.paymentInstructions), b.createdAt!));
+      rows.push(
+        wa(
+          "booking_created",
+          opts.paymentConfirmation
+            ? tpl.waBookingCreated({ ...facts, holdExpiresAt: b.holdExpiresAt ?? plusMinutes(b.createdAt!, 24 * 60) }, opts.paymentInstructions)
+            : tpl.waBookingConfirmed(facts), // 12 BR-12-P9
+          b.createdAt!,
+        ),
+      );
     }
 
     for (const p of paymentRows.filter((x) => x.bookingId === b.id && x.kind === "payment" && x.paidAt >= since)) {
-      rows.push(wa("payment_confirmed", tpl.waPaymentConfirmed(facts), p.paidAt, `payment_confirmed:${p.id}`));
+      // A system payment is part of the creation message (12 BR-12-P9).
+      if (p.method !== "system") rows.push(wa("payment_confirmed", tpl.waPaymentConfirmed(facts), p.paidAt, `payment_confirmed:${p.id}`));
       for (const a of mine.filter((x) => x.bg.notifiedAt)) {
         const variant = a.bg.shortNotice ? "short" : "normal";
         rows.push(

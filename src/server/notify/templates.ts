@@ -60,6 +60,24 @@ export function waBookingCreated(b: BookingFacts, paymentInstructions: string): 
   return { title: `Hello ${b.customerName}, thank you for booking a TMII tour guide!`, body };
 }
 
+/** 12 BR-12-P9: creation message while payment confirmation is off (no payment text). */
+export function waBookingConfirmed(b: BookingFacts): Rendered {
+  const body = lines(
+    `Hello ${b.customerName}, thank you for booking a TMII tour guide! Your booking is confirmed ✅`,
+    "",
+    `Booking code: ${b.code}`,
+    `📅 ${scheduleEn(b)}`,
+    `🗣 ${b.languageEn}-speaking guide: ${joinNames(b.guideNames)}`,
+    `👥 ${b.people} people · ${b.packageName}`,
+    b.facilities.length ? `🎁 Included: ${b.facilities.join(", ")}` : null,
+    `Total: ${formatRupiah(b.total)}`,
+    "",
+    "Please come to the TMII Tour Guide counter 15 minutes before your tour. See you at TMII!",
+    "— TMII Tour Guide Service",
+  );
+  return { title: `Booking ${b.code} is confirmed`, body };
+}
+
 export function waPaymentConfirmed(b: BookingFacts): Rendered {
   const body = lines(
     `Hi ${b.customerName}, we have received your payment. Booking ${b.code} is confirmed ✅`,
@@ -136,6 +154,30 @@ export function inAppGuideAssigned(b: BookingFacts, variant: "normal" | "short" 
   return variant === "short"
     ? { title: `Tur baru (di bawah H-2): ${formatDateLong(b.tourDate)}`, body: `${body} Mohon segera konfirmasi.`, link }
     : { title: `Tur baru: ${formatDateLong(b.tourDate)}`, body, link };
+}
+
+/** 12 BR-12-M7 / M8: a booking joined or left the guide's tour. */
+export function inAppTourMerged(b: BookingFacts, opts: { change: "merged" | "split"; code: string; people: number; total: number }): Rendered {
+  return opts.change === "merged"
+    ? {
+        title: `Tur digabung: ${b.code}`,
+        body: `${opts.code} (${opts.people} orang) ikut tur Anda. Total ${opts.total} orang · ${scheduleId(b)}.`,
+        link: `/portal/tur/${b.bookingId}`,
+      }
+    : {
+        title: `Tur gabungan berubah: ${b.code}`,
+        body: `${opts.code} dipisahkan dari tur Anda. Total ${opts.total} orang · ${scheduleId(b)}.`,
+        link: `/portal/tur/${b.bookingId}`,
+      };
+}
+
+/** 12 BR-12-F3: admin confirmed on the guide's behalf. */
+export function inAppGuideAckForced(b: BookingFacts, adminName: string, reason: string): Rendered {
+  return {
+    title: `Tur ${b.code} sudah dikonfirmasi`,
+    body: `Admin ${adminName} mengonfirmasi tur ${b.code} (${scheduleId(b)}) atas nama Anda. Alasan: ${reason}`,
+    link: `/portal/tur/${b.bookingId}`,
+  };
 }
 
 export function inAppGuideRescheduled(
@@ -231,4 +273,7 @@ export const EVENT_LABELS: Record<string, string> = {
   leave_decided: "Keputusan cuti",
   leave_added_by_admin: "Cuti ditambahkan admin",
   leave_cancelled_by_admin: "Cuti dibatalkan admin",
+  tour_merged: "Tur digabung",
+  guide_ack_forced: "Dikonfirmasi admin",
+  email_test: "Email uji",
 };

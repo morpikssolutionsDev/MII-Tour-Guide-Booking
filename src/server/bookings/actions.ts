@@ -1,6 +1,7 @@
 "use server";
 
 import { and, eq, inArray, isNull, like, ne, sql } from "drizzle-orm";
+import { after } from "next/server";
 import { z } from "zod";
 import { db, type Executor } from "@/db/client";
 import {
@@ -15,6 +16,7 @@ import {
   languages,
   payments,
   slots,
+  type BookingStatus,
 } from "@/db/schema";
 import { bookingCodePrefix, formatBookingCode } from "@/domain/booking-code";
 import { canCancel, canComplete, canReschedule, TERMINAL_STATUSES } from "@/domain/booking-status";
@@ -26,10 +28,13 @@ import { addDays, daysBetween, eachDay, isValidDate, toWib, wibToUtc } from "@/d
 import { t } from "@/i18n/id";
 import { formatSlot } from "@/lib/format";
 import { isCountryCode } from "@/lib/countries";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { ActionError, defineAction, fieldError } from "../action";
+import { sendBookingEmail } from "../email/send";
 import { issueFeedbackToken } from "../feedback/tokens";
 import { notify } from "../notify";
 import { recomputeGuideAck, reconcileStatusWithChecklist } from "../preparation/core";
+import { confirmPaidBooking } from "../payments/core";
 import { loadPricingInputs } from "../pricing/queries";
 import { getSettings } from "../settings";
 import {
@@ -39,7 +44,8 @@ import {
   loadGuidesForAvailability,
   rankEligibleGuides,
 } from "./availability";
-import { expireHolds } from "./holds";
+import { syncHolds } from "./holds";
+import { detachMember, hostIdOf, isHostWithMembers, isMember, loadGroup, recomputeGroup, transferHost } from "./merge-core";
 
 const sb = t.booking;
 const sw = sb.wizard;
@@ -212,7 +218,7 @@ const scheduleQuery = z.object({
 
 /** BR-05-3 for the chosen date. */
 export const checkAvailability = defineAction({ roles: ["admin", "staff"], input: scheduleQuery }, async (input) => {
-  await expireHolds();
+  await syncHolds();
   const pricing = await loadPricingInputs(db, input.packageId);
   if (!pricing) throw new ActionError("NOT_FOUND", t.errors.notFound);
   const guidesNeeded = Math.ceil(input.people / pricing.pkg.maxPeoplePerGuide);
@@ -263,7 +269,7 @@ export const checkAvailabilityRange = defineAction({ roles: ["admin", "staff"], 
 export const rankGuides = defineAction(
   { roles: ["admin", "staff"], input: scheduleQuery.extend({ slotId: z.string().min(1) }) },
   async (input) => {
-    await expireHolds();
+    await syncHolds();
     const pricing = await loadPricingInputs(db, input.packageId);
     if (!pricing) throw new ActionError("NOT_FOUND", t.errors.notFound);
     const guidesNeeded = Math.ceil(input.people / pricing.pkg.maxPeoplePerGuide);
@@ -304,11 +310,11 @@ export const createBooking = defineAction(
   async (input, me) => {
     const phone = normalizePhone(input.customer.phone);
     if (!phone) throw fieldError("customer.phone", sw.customer.phoneInvalid);
-    await expireHolds();
+    await syncHolds();
     const now = new Date();
 
     try {
-      return await db.transaction(async (tx) => {
+      const created = await db.transaction(async (tx) => {
         const { snapshot, slot, guideIds, settings } = await prepareSchedule(tx, input, { now });
 
         // BR-05-8: customer upsert on the normalised WhatsApp number.
@@ -338,7 +344,9 @@ export const createBooking = defineAction(
         }
 
         const code = await nextBookingCode(tx, now);
-        const holdExpiresAt = computeHoldExpiry(now, settings.hold_expiry_hours, input.date, slot.startTime);
+        // 12 BR-12-P3: without payment confirmation there is no hold; the booking is paid by the system.
+        const paymentConfirmation = isPaymentConfirmationEnabled();
+        const holdExpiresAt = paymentConfirmation ? computeHoldExpiry(now, settings.hold_expiry_hours, input.date, slot.startTime).toISOString() : null;
         const [{ id }] = await tx
           .insert(bookings)
           .values({
@@ -354,10 +362,10 @@ export const createBooking = defineAction(
             tourDate: input.date,
             people: input.people,
             guidesNeeded: snapshot.guidesNeeded,
-            status: "awaiting_payment",
+            status: paymentConfirmation ? "awaiting_payment" : "confirmed",
             priceSnapshot: snapshot,
             totalAmount: snapshot.total,
-            holdExpiresAt: holdExpiresAt.toISOString(),
+            holdExpiresAt,
             specialNeeds: input.specialNeeds,
             internalNotes: input.internalNotes,
             groupRef,
@@ -370,8 +378,18 @@ export const createBooking = defineAction(
           ...guideIds.map((guideId) => ({ bookingId: id, type: "guide_assigned", actorUserId: me.id, payload: { guideId } })),
         ]);
         await notify.bookingCreated(tx, id);
-        return { id, code };
+        if (!paymentConfirmation) {
+          await confirmPaidBooking(
+            tx,
+            { bookingId: id, method: "system", amount: snapshot.total, paidAt: now.toISOString(), recordedBy: null, from: null },
+            now,
+          );
+        }
+        return { id, code, confirmed: !paymentConfirmation };
       });
+      // 12 BR-12-E3: the team email goes out after the response; a mail failure never affects the booking.
+      after(() => sendBookingEmail("booking_created", created.id));
+      return created;
     } catch (error) {
       if (isGuideSlotClash(error)) throw new ActionError("CONFLICT", sw.guideTaken("Guide"), { refresh: true });
       throw error;
@@ -387,7 +405,7 @@ export const rescheduleBooking = defineAction(
     input: z.object({ id: z.string(), ...scheduleFields, reason: z.string().trim().min(1, t.common.required).max(200) }),
   },
   async (input, me) => {
-    await expireHolds();
+    await syncHolds();
     const now = new Date();
     const nowIso = now.toISOString();
     try {
@@ -395,6 +413,19 @@ export const rescheduleBooking = defineAction(
         const [booking] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
         if (!booking) throw new ActionError("NOT_FOUND", t.errors.notFound);
         if (!canReschedule(booking, now)) throw new ActionError("INVALID_STATE", sb.reschedule.notAllowed);
+        // 12 BR-12-M9: a member leaves its shared tour first; the host may only change guides.
+        if (isMember(booking)) await detachMember(tx, booking, me.id, now);
+        const hostWithMembers = isHostWithMembers(booking);
+        if (
+          hostWithMembers &&
+          (booking.tourDate !== input.date ||
+            booking.slotId !== input.slotId ||
+            booking.languageId !== input.languageId ||
+            booking.packageId !== input.packageId ||
+            booking.people !== input.people)
+        ) {
+          throw new ActionError("INVALID_STATE", t.merge.hostLocked);
+        }
 
         const { snapshot, slot, guideIds } = await prepareSchedule(tx, input, {
           now,
@@ -501,7 +532,21 @@ export const rescheduleBooking = defineAction(
         ]);
 
         // Notifications (05 §7, 07 §7).
+        const paymentConfirmation = isPaymentConfirmationEnabled();
         const priceDiff = snapshot.total - booking.totalAmount;
+        // 12 BR-12-P5: without payment confirmation the system settles the difference.
+        if (!paymentConfirmation && paid && priceDiff !== 0) {
+          await tx.insert(payments).values({
+            bookingId: booking.id,
+            kind: "adjustment",
+            method: "system",
+            amount: priceDiff,
+            paidAt: nowIso,
+            note: sb.reschedule.systemAdjustment,
+            recordedBy: null,
+          });
+          await tx.insert(bookingEvents).values({ bookingId: booking.id, type: "adjustment_recorded", actorUserId: null, payload: { amount: priceDiff, by: "system" } });
+        }
         const detailsChanged =
           booking.languageId !== input.languageId ||
           booking.people !== input.people ||
@@ -517,7 +562,7 @@ export const rescheduleBooking = defineAction(
           scheduleChanged,
           before: { tourDate: booking.tourDate, slotStart: booking.slotStart, slotEnd: booking.slotEnd },
           summary: await detailsSummary(tx, booking, input, snapshot),
-          priceDiff: paid ? priceDiff : 0,
+          priceDiff: paid && paymentConfirmation ? priceDiff : 0,
         });
         if (paid && added.length) await notify.guideAssigned(tx, booking.id, added);
 
@@ -525,11 +570,12 @@ export const rescheduleBooking = defineAction(
           await recomputeGuideAck(tx, booking.id, now);
           await reconcileStatusWithChecklist(tx, booking.id, now);
         }
+        if (hostWithMembers) await recomputeGroup(tx, booking.id, now);
         const [paidRow] = await tx
           .select({ n: sql<number>`count(*)` })
           .from(payments)
           .where(and(eq(payments.bookingId, booking.id), isNull(payments.voidedAt)));
-        return { id: booking.id, priceDiff, hasPayments: Number(paidRow?.n ?? 0) > 0 };
+        return { id: booking.id, priceDiff: paymentConfirmation ? priceDiff : 0, hasPayments: Number(paidRow?.n ?? 0) > 0 };
       });
     } catch (error) {
       if (isGuideSlotClash(error)) throw new ActionError("CONFLICT", sw.guideTaken("Guide"), { refresh: true });
@@ -554,13 +600,18 @@ export const cancelBooking = defineAction(
       .refine((v) => v.reason !== "other" || v.detail, { message: t.common.required, path: ["detail"] }),
   },
   async (input, me) => {
-    await expireHolds();
+    await syncHolds();
+    // 12 BR-12-P6: no refunds are recorded while payment confirmation is off.
+    if (!isPaymentConfirmationEnabled()) input = { ...input, refundAmount: null, refundNote: null };
     const now = new Date();
     const nowIso = now.toISOString();
     await db.transaction(async (tx) => {
       const [booking] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
       if (!booking) throw new ActionError("NOT_FOUND", t.errors.notFound);
       if (!canCancel(booking, now)) throw new ActionError("INVALID_STATE", sb.actions.notAvailable(t.bookingStatus[booking.status]));
+      // 12 BR-12-M9: a member just leaves; a host hands its guides to the next member first.
+      if (isMember(booking)) await detachMember(tx, booking, me.id, now);
+      else if (isHostWithMembers(booking)) await transferHost(tx, booking, me.id, now);
 
       const validPayments = await tx.select().from(payments).where(and(eq(payments.bookingId, booking.id), isNull(payments.voidedAt)));
       const paid = validPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -625,36 +676,74 @@ export const completeBooking = defineAction(
     return db.transaction(async (tx) => {
       const [booking] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
       if (!booking) throw new ActionError("NOT_FOUND", t.errors.notFound);
-      if (me.role === "guide") {
-        const [assigned] = await tx
-          .select({ id: bookingGuides.id })
-          .from(bookingGuides)
-          .where(and(eq(bookingGuides.bookingId, booking.id), eq(bookingGuides.guideId, me.guideId ?? ""), isNull(bookingGuides.releasedAt)));
-        if (!assigned) throw new ActionError("NOT_FOUND", t.errors.notFound);
-      }
+      if (me.role === "guide") await assertGuideServes(tx, booking, me.guideId);
       if (booking.status === "completed" || booking.status === "no_show" || booking.status === "evaluated") {
         const [by] = booking.completedBy ? await tx.select({ name: guides.displayName }).from(guides).where(eq(guides.userId, booking.completedBy)) : [];
         throw new ActionError("INVALID_STATE", `Tur ini sudah ditandai ${t.bookingStatus[booking.status]}${by ? ` oleh ${by.name}` : ""}.`);
       }
       if (!canComplete(booking, now)) throw new ActionError("INVALID_STATE", sb.actions.notAvailable(t.bookingStatus[booking.status]));
-
-      const changed = await tx
-        .update(bookings)
-        .set({ status: input.outcome, completedAt: now.toISOString(), completedBy: me.id })
-        .where(and(eq(bookings.id, booking.id), inArray(bookings.status, ["confirmed", "ready"])))
-        .returning({ id: bookings.id });
-      if (changed.length === 0) throw new ActionError("INVALID_STATE", sb.actions.notAvailable(t.bookingStatus[booking.status]));
-      await tx.insert(bookingEvents).values({
-        bookingId: booking.id,
-        type: "status_changed",
-        actorUserId: me.id,
-        payload: { from: booking.status, to: input.outcome, ...(input.note ? { note: input.note } : {}) },
-      });
-      if (input.outcome === "completed") await issueFeedbackToken(tx, booking.id, now);
+      if (!(await finishBooking(tx, booking, input.outcome, me.id, now, input.note))) {
+        throw new ActionError("INVALID_STATE", sb.actions.notAvailable(t.bookingStatus[booking.status]));
+      }
       return { status: input.outcome };
     });
   },
 );
+
+/** 12 BR-12-M11 "Selesaikan semua": completes every booking of a shared tour still open. */
+export const completeGroup = defineAction(
+  { roles: ["admin", "staff", "guide"], input: z.object({ hostId: z.string() }) },
+  async (input, me) => {
+    const now = new Date();
+    const [requested] = await db.select().from(bookings).where(eq(bookings.id, input.hostId));
+    if (!requested) throw new ActionError("NOT_FOUND", t.errors.notFound);
+    if (me.role === "guide") await assertGuideServes(db, requested, me.guideId);
+    const group = await loadGroup(db, hostIdOf(requested));
+    const completed: string[] = [];
+    // One transaction per booking: each gets its own feedback request (BR-12-M11).
+    for (const booking of group) {
+      if (!canComplete(booking, now)) continue;
+      const done = await db.transaction((tx) => finishBooking(tx, booking, "completed", me.id, now));
+      if (done) completed.push(booking.id);
+    }
+    if (completed.length === 0) throw new ActionError("INVALID_STATE", sb.actions.notAvailable(t.bookingStatus[requested.status]));
+    return { completed };
+  },
+);
+
+/** A guide may act on a booking it serves directly or through the shared tour's host (BR-12-M13). */
+async function assertGuideServes(ex: Executor, booking: { id: string; mergeGroupId: string | null }, guideId: string | null) {
+  const [assigned] = await ex
+    .select({ id: bookingGuides.id })
+    .from(bookingGuides)
+    .where(and(eq(bookingGuides.bookingId, hostIdOf(booking)), eq(bookingGuides.guideId, guideId ?? ""), isNull(bookingGuides.releasedAt)));
+  if (!assigned) throw new ActionError("NOT_FOUND", t.errors.notFound);
+}
+
+/** BR-05-14 Selesai / Tidak hadir. Returns false when another request finished it first. */
+async function finishBooking(
+  tx: Executor,
+  booking: { id: string; status: BookingStatus },
+  outcome: "completed" | "no_show",
+  actorUserId: string,
+  now: Date,
+  note?: string,
+) {
+  const changed = await tx
+    .update(bookings)
+    .set({ status: outcome, completedAt: now.toISOString(), completedBy: actorUserId })
+    .where(and(eq(bookings.id, booking.id), inArray(bookings.status, ["confirmed", "ready"])))
+    .returning({ id: bookings.id });
+  if (changed.length === 0) return false;
+  await tx.insert(bookingEvents).values({
+    bookingId: booking.id,
+    type: "status_changed",
+    actorUserId,
+    payload: { from: booking.status, to: outcome, ...(note ? { note } : {}) },
+  });
+  if (outcome === "completed") await issueFeedbackToken(tx, booking.id, now);
+  return true;
+}
 
 /* ---------------- notes (BR-05-16) ---------------- */
 

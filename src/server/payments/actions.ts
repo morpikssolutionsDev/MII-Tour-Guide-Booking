@@ -3,19 +3,25 @@
 import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { bookingEvents, bookings, payments, PAYMENT_METHODS } from "@/db/schema";
+import { bookingEvents, bookings, MANUAL_PAYMENT_METHODS, payments } from "@/db/schema";
 import { canVoidPayment } from "@/domain/booking-status";
 import { computeHoldExpiry, isHoldExpired } from "@/domain/hold";
 import { isValidDate, isValidTime, wibToUtc } from "@/domain/time";
 import { t } from "@/i18n/id";
 import { ActionError, defineAction, fieldError } from "../action";
 import { expireHolds } from "../bookings/holds";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { notify } from "../notify";
-import { copyChecklistIfMissing, notifyUnnotifiedGuides, reconcileStatusWithChecklist } from "../preparation/core";
 import { getSettings } from "../settings";
 import { IMAGE_TYPES, storeFile, UploadError } from "../storage";
+import { confirmPaidBooking } from "./core";
 
 const sp = t.payment;
+
+/** 12 BR-12-P7: manual payment actions exist only while payment confirmation is on. */
+function assertPaymentConfirmationEnabled() {
+  if (!isPaymentConfirmationEnabled()) throw new ActionError("INVALID_STATE", sp.errors.disabled);
+}
 
 const paidAtFields = {
   paidDate: z.string().refine(isValidDate, t.common.required),
@@ -36,7 +42,7 @@ function resolvePaidAt(paidDate: string, paidTime: string, notBefore: string) {
 }
 
 /** BR-06-4: non-cash needs a proof image or a reference. */
-async function storeProof(bookingId: string, method: (typeof PAYMENT_METHODS)[number], proofFile: File | undefined, reference: string | null) {
+async function storeProof(bookingId: string, method: (typeof MANUAL_PAYMENT_METHODS)[number], proofFile: File | undefined, reference: string | null) {
   const hasFile = proofFile && proofFile.size > 0;
   if (method !== "cash" && !hasFile && !reference) throw fieldError("reference", sp.errors.proofRequired);
   if (!hasFile) return { proofUrl: null, proofName: null };
@@ -60,7 +66,7 @@ export const confirmPayment = defineAction(
     roles: ["admin", "staff"],
     input: z.object({
       bookingId: z.string(),
-      method: z.enum(PAYMENT_METHODS),
+      method: z.enum(MANUAL_PAYMENT_METHODS),
       amount: z.number().int().min(1),
       ...paidAtFields,
       ...proofFields,
@@ -69,6 +75,7 @@ export const confirmPayment = defineAction(
     }),
   },
   async (input, me) => {
+    assertPaymentConfirmationEnabled();
     await expireHolds();
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, input.bookingId));
     if (!booking) throw new ActionError("NOT_FOUND", t.errors.notFound);
@@ -90,11 +97,10 @@ export const confirmPayment = defineAction(
         .where(and(eq(bookings.id, booking.id), eq(bookings.status, "awaiting_payment")))
         .returning({ id: bookings.id });
       if (changed.length === 0) throw new ActionError("INVALID_STATE", t.booking.actions.notAvailable(t.bookingStatus[booking.status]));
-      const [{ id: paymentId }] = await tx
-        .insert(payments)
-        .values({
+      const paymentId = await confirmPaidBooking(
+        tx,
+        {
           bookingId: booking.id,
-          kind: "payment",
           method: input.method,
           amount: input.amount,
           paidAt,
@@ -102,17 +108,12 @@ export const confirmPayment = defineAction(
           ...proof,
           note: input.note,
           recordedBy: me.id,
-        })
-        .returning({ id: payments.id });
-      await tx.insert(bookingEvents).values([
-        { bookingId: booking.id, type: "payment_confirmed", actorUserId: me.id, payload: { method: input.method, amount: input.amount, reference: input.reference, mismatch } },
-        { bookingId: booking.id, type: "status_changed", actorUserId: me.id, payload: { from: "awaiting_payment", to: "confirmed" } },
-      ]);
-      await copyChecklistIfMissing(tx, booking.id); // BR-07-1
-      await notifyUnnotifiedGuides(tx, booking.id, now); // BR-07-2
+          from: "awaiting_payment",
+          mismatch,
+        },
+        now,
+      );
       await notify.paymentConfirmed(tx, booking.id, paymentId);
-      // A re-confirmation (after an undo) may already have a complete checklist.
-      await reconcileStatusWithChecklist(tx, booking.id, now);
     });
     return null;
   },
@@ -126,13 +127,14 @@ export const recordAdjustment = defineAction(
       bookingId: z.string(),
       direction: z.enum(["charge", "refund"]),
       amount: z.number().int().min(1),
-      method: z.enum(PAYMENT_METHODS),
+      method: z.enum(MANUAL_PAYMENT_METHODS),
       ...paidAtFields,
       ...proofFields,
       note: z.string().trim().min(1, t.common.required).max(300),
     }),
   },
   async (input, me) => {
+    assertPaymentConfirmationEnabled();
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, input.bookingId));
     if (!booking) throw new ActionError("NOT_FOUND", t.errors.notFound);
     const [{ n }] = await db
@@ -165,8 +167,10 @@ export const recordAdjustment = defineAction(
 export const voidPayment = defineAction(
   { roles: ["admin"], input: z.object({ paymentId: z.string(), reason: z.string().trim().min(1, t.common.required).max(200) }) },
   async (input, me) => {
+    assertPaymentConfirmationEnabled();
     const [payment] = await db.select().from(payments).where(eq(payments.id, input.paymentId));
     if (!payment || payment.kind !== "payment" || payment.voidedAt) throw new ActionError("NOT_FOUND", t.errors.notFound);
+    if (payment.method === "system") throw new ActionError("INVALID_STATE", sp.errors.systemPayment);
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, payment.bookingId));
     const now = new Date();
     if (!booking || !canVoidPayment(booking, now)) throw new ActionError("INVALID_STATE", sp.errors.voidAfterStart);

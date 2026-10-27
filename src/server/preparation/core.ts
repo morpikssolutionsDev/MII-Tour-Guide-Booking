@@ -47,8 +47,13 @@ export async function notifyUnnotifiedGuides(tx: Executor, bookingId: string, no
   return pending.map((p) => p.guideId);
 }
 
-/** BR-07-4: the system item is checked iff every active assignment acknowledged. */
+/**
+ * BR-07-4: the system item is checked iff every active assignment acknowledged. A member of a
+ * shared tour follows its host's assignments (12 BR-12-M10).
+ */
 export async function recomputeGuideAck(tx: Executor, bookingId: string, now: Date) {
+  const [owner] = await tx.select({ mergeGroupId: bookings.mergeGroupId }).from(bookings).where(eq(bookings.id, bookingId));
+  const assignmentsOf = owner?.mergeGroupId ?? bookingId;
   const [item] = await tx
     .select()
     .from(bookingChecklistItems)
@@ -57,7 +62,7 @@ export async function recomputeGuideAck(tx: Executor, bookingId: string, now: Da
   const assigned = await tx
     .select({ acknowledgedAt: bookingGuides.acknowledgedAt })
     .from(bookingGuides)
-    .where(and(eq(bookingGuides.bookingId, bookingId), isNull(bookingGuides.releasedAt)));
+    .where(and(eq(bookingGuides.bookingId, assignmentsOf), isNull(bookingGuides.releasedAt)));
   const allAcked = assigned.length > 0 && assigned.every((a) => a.acknowledgedAt);
   if (allAcked && !item.checkedAt) {
     await tx.update(bookingChecklistItems).set({ checkedAt: now.toISOString(), checkedBy: null }).where(eq(bookingChecklistItems.id, item.id));

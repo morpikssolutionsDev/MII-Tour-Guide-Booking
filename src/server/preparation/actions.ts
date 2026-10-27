@@ -9,7 +9,8 @@ import { wibToUtc } from "@/domain/time";
 import { t } from "@/i18n/id";
 import { ActionError, defineAction } from "../action";
 import { notify } from "../notify";
-import { recomputeGuideAck, reconcileStatusWithChecklist } from "./core";
+import { hostIdOf, recomputeGroup } from "../bookings/merge-core";
+import { reconcileStatusWithChecklist } from "./core";
 
 const sp = t.preparation;
 
@@ -44,7 +45,9 @@ export const setChecklistItem = defineAction(
 export const acknowledgeAssignment = defineAction({ roles: ["guide"], input: z.object({ bookingId: z.string() }) }, async (input, me) => {
   const now = new Date();
   await db.transaction(async (tx) => {
-    const [booking] = await tx.select().from(bookings).where(eq(bookings.id, input.bookingId));
+    const [requested] = await tx.select().from(bookings).where(eq(bookings.id, input.bookingId));
+    // A shared tour is acknowledged once, on its host (12 BR-12-M10).
+    const [booking] = requested ? await tx.select().from(bookings).where(eq(bookings.id, hostIdOf(requested))) : [];
     const [assignment] = booking
       ? await tx
           .select()
@@ -57,11 +60,57 @@ export const acknowledgeAssignment = defineAction({ roles: ["guide"], input: z.o
     if (assignment.acknowledgedAt) return;
     await tx.update(bookingGuides).set({ acknowledgedAt: now.toISOString() }).where(eq(bookingGuides.id, assignment.id));
     await tx.insert(bookingEvents).values({ bookingId: booking.id, type: "guide_acknowledged", actorUserId: me.id, payload: { guideId: assignment.guideId } });
-    await recomputeGuideAck(tx, booking.id, now); // BR-07-4
-    await reconcileStatusWithChecklist(tx, booking.id, now); // BR-07-5
+    await recomputeGroup(tx, booking.id, now); // BR-07-4, BR-07-5 for the whole shared tour
   });
   return null;
 });
+
+/**
+ * 12 BR-12-F1–F5: admin confirms a notified assignment on the guide's behalf, with a reason.
+ * Same effect as "Saya siap"; idempotent; no undo.
+ */
+export const forceAcknowledge = defineAction(
+  {
+    roles: ["admin"],
+    input: z.object({
+      bookingId: z.string(),
+      guideId: z.string(),
+      reason: z.string().trim().min(5, sp.forceAck.reasonLength).max(200, sp.forceAck.reasonLength),
+    }),
+  },
+  async (input, me) => {
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      const [requested] = await tx.select().from(bookings).where(eq(bookings.id, input.bookingId));
+      // BR-12-F1: for a member, the host's assignment is the one confirmed.
+      const [booking] = requested ? await tx.select().from(bookings).where(eq(bookings.id, hostIdOf(requested))) : [];
+      const [assignment] = booking
+        ? await tx
+            .select()
+            .from(bookingGuides)
+            .where(and(eq(bookingGuides.bookingId, booking.id), eq(bookingGuides.guideId, input.guideId), isNull(bookingGuides.releasedAt)))
+        : [];
+      if (!booking || !assignment) throw new ActionError("NOT_FOUND", t.errors.notFound);
+      if (!PAID_LIVE_STATUSES.includes(booking.status)) throw new ActionError("INVALID_STATE", t.booking.actions.notAvailable(t.bookingStatus[booking.status]));
+      if (now >= wibToUtc(booking.tourDate, booking.slotStart)) throw new ActionError("INVALID_STATE", sp.tourStarted);
+      if (!assignment.notifiedAt) throw new ActionError("INVALID_STATE", sp.forceAck.notNotified);
+      if (assignment.acknowledgedAt) return;
+      await tx
+        .update(bookingGuides)
+        .set({ acknowledgedAt: now.toISOString(), acknowledgedBy: me.id, ackNote: input.reason })
+        .where(eq(bookingGuides.id, assignment.id));
+      await tx.insert(bookingEvents).values({
+        bookingId: booking.id,
+        type: "guide_acknowledged",
+        actorUserId: me.id,
+        payload: { guideId: assignment.guideId, by: me.id, forced: true, reason: input.reason },
+      });
+      await recomputeGroup(tx, booking.id, now); // BR-07-4, BR-07-5 (BR-12-M10)
+      await notify.guideAckForced(tx, booking.id, assignment.guideId, me.name, input.reason);
+    });
+    return null;
+  },
+);
 
 /** BR-07-7: reminder; rate-limited to once per 10 minutes per guide and booking. */
 export const resendGuideNotice = defineAction(

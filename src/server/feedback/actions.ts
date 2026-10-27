@@ -28,7 +28,7 @@ export const submitFeedbackByStaff = defineAction(
       const [assigned] = await db
         .select({ id: bookingGuides.id })
         .from(bookingGuides)
-        .where(and(eq(bookingGuides.bookingId, booking.id), eq(bookingGuides.guideId, me.guideId ?? ""), isNull(bookingGuides.releasedAt)));
+        .where(and(eq(bookingGuides.bookingId, booking.mergeGroupId ?? booking.id), eq(bookingGuides.guideId, me.guideId ?? ""), isNull(bookingGuides.releasedAt)));
       if (!assigned) throw new ActionError("NOT_FOUND", t.errors.notFound);
     }
     if (booking.status !== "completed") throw new ActionError("INVALID_STATE", t.feedback.notAvailable);

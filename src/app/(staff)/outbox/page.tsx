@@ -25,7 +25,7 @@ export default async function OutboxPage({ searchParams }: { searchParams: Searc
   const page = Math.max(1, Number(p.page) || 1);
   const { rows, total } = await listOutbox({
     q: p.q,
-    channel: p.kanal === "in_app" || p.kanal === "whatsapp_mock" ? p.kanal : undefined,
+    channel: p.kanal === "in_app" || p.kanal === "whatsapp_mock" || p.kanal === "email" ? p.kanal : undefined,
     eventKey: p.peristiwa && p.peristiwa in EVENT_LABELS ? p.peristiwa : undefined,
     from: p.dari && isValidDate(p.dari) ? p.dari : undefined,
     to: p.sampai && isValidDate(p.sampai) ? p.sampai : undefined,
@@ -35,6 +35,7 @@ export default async function OutboxPage({ searchParams }: { searchParams: Searc
   const channelOptions = [
     { value: "in_app", label: so.channels.in_app },
     { value: "whatsapp_mock", label: so.channels.whatsapp_mock },
+    { value: "email", label: so.channels.email },
   ];
   const pageHref = (n: number) => {
     const next = new URLSearchParams(Object.entries(p).filter(([, v]) => v) as [string, string][]);

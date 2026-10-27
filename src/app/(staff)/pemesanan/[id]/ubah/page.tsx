@@ -5,7 +5,8 @@ import { PageContainer, PageHeader } from "@/components/common/page-header";
 import { canReschedule } from "@/domain/booking-status";
 import { t } from "@/i18n/id";
 import { formatSlot } from "@/lib/format";
-import { expireHolds } from "@/server/bookings/holds";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
+import { syncHolds } from "@/server/bookings/holds";
 import { loadRescheduleState, loadWizardConfig } from "@/server/bookings/wizard";
 import { getBookingDetail } from "@/server/bookings/queries";
 import { requireRole } from "@/server/session";
@@ -16,7 +17,7 @@ export const metadata: Metadata = { title: t.booking.reschedule.title };
 export default async function ReschedulePage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireRole("admin", "staff");
   const { id } = await params;
-  await expireHolds();
+  await syncHolds();
   const state = await loadRescheduleState(id);
   if (!state) notFound();
   if (!canReschedule(state.booking, new Date())) redirect(`/pemesanan/${id}`);
@@ -35,7 +36,8 @@ export default async function ReschedulePage({ params }: { params: Promise<{ id:
           code: b.code,
           customerName: state.customerName,
           status: b.status,
-          hasPayments: Boolean(detail?.paymentSummary.paid),
+          // 12 BR-12-P5: without payment confirmation the system settles price differences.
+          hasPayments: isPaymentConfirmationEnabled() && Boolean(detail?.paymentSummary.paid),
           before: {
             languageId: b.languageId,
             people: b.people,

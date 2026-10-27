@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CalendarCheck, Clock, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarCheck, Clock, FilePlus2, UserCheck, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -11,9 +11,11 @@ import { toWib } from "@/domain/time";
 import { t } from "@/i18n/id";
 import { firstName, formatDateLong, formatDateMedium, formatDayMonth, formatDuration, formatRelative, formatRupiah, formatSlot } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { getDashboard, type Dashboard } from "@/server/dashboard/queries";
 import { getSettings } from "@/server/settings";
 import { requireRole } from "@/server/session";
+import { ForceAckButton } from "../pemesanan/[id]/force-ack-dialog";
 import { MarkPaidButton, ResendButton } from "./widget-actions";
 
 export const metadata: Metadata = { title: t.nav.beranda };
@@ -27,6 +29,8 @@ export default async function BerandaPage() {
   const [data, settings] = await Promise.all([getDashboard(me.role, now), getSettings()]);
   const wib = toWib(now);
   const k = d.kpi;
+  // 12 §3.5: payment-related tiles and widgets only exist while payment confirmation is on.
+  const paymentConfirmation = isPaymentConfirmationEnabled();
 
   return (
     <>
@@ -36,18 +40,24 @@ export default async function BerandaPage() {
         <h1 className="mt-1 text-2xl font-bold md:text-3xl">
           {t.greeting(Number(wib.time.slice(0, 2)))}, {firstName(me.name)}
         </h1>
-        <p className="mt-1 text-sm text-white/85">{d.summary(data.tours.total, data.expiring.awaiting)}</p>
+        <p className="mt-1 text-sm text-white/85">
+          {paymentConfirmation ? d.summary(data.tours.total, data.expiring.awaiting) : d.summaryNew(data.tours.total, data.created.total)}
+        </p>
       </HeaderBand>
       <PageContainer className="relative -mt-12 space-y-5 pt-0 md:-mt-14 md:pt-0">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <KpiTile label={k.toursToday} icon={CalendarCheck} value={String(data.tours.total)} sub={k.toursDone(data.tours.done)} />
-          <KpiTile
-            label={k.awaiting}
-            icon={Clock}
-            value={String(data.expiring.awaiting)}
-            sub={k.expiringSoon(data.expiring.count)}
-            tone={data.expiring.count > 0 ? "warning" : undefined}
-          />
+          {paymentConfirmation ? (
+            <KpiTile
+              label={k.awaiting}
+              icon={Clock}
+              value={String(data.expiring.awaiting)}
+              sub={k.expiringSoon(data.expiring.count)}
+              tone={data.expiring.count > 0 ? "warning" : undefined}
+            />
+          ) : (
+            <KpiTile label={k.createdToday} icon={FilePlus2} value={String(data.created.total)} sub={k.viaCallCenter(data.created.callCenter)} />
+          )}
           <KpiTile label={k.guidesOnDuty} icon={Users} value={`${data.guides.busy}/${data.guides.working}`} sub={k.onLeave(data.guides.onLeave)} />
           <KpiTile
             label={k.notAcked}
@@ -60,19 +70,21 @@ export default async function BerandaPage() {
 
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <TodayWidget data={data} nowTime={wib.time} />
-          <Widget title={d.widgets.expiring} count={data.expiring.count} href="/pemesanan?view=menunggu-pembayaran" empty={d.empty.expiring}>
-            {data.expiring.rows.map((b) => (
-              <Row key={b.id} href={`/pemesanan/${b.id}`} action={<MarkPaidButton bookingId={b.id} code={b.code} total={b.total} />}>
-                <p className="font-medium tabular">
-                  {b.code} <span className="font-normal text-muted-foreground">· {b.customerName}</span>
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-senja-800">{t.booking.expiresIn(formatDuration(Date.parse(b.holdExpiresAt!) - now.getTime()))}</span> ·{" "}
-                  <span className="tabular">{formatRupiah(b.total)}</span>
-                </p>
-              </Row>
-            ))}
-          </Widget>
+          {paymentConfirmation && (
+            <Widget title={d.widgets.expiring} count={data.expiring.count} href="/pemesanan?view=menunggu-pembayaran" empty={d.empty.expiring}>
+              {data.expiring.rows.map((b) => (
+                <Row key={b.id} href={`/pemesanan/${b.id}`} action={<MarkPaidButton bookingId={b.id} code={b.code} total={b.total} />}>
+                  <p className="font-medium tabular">
+                    {b.code} <span className="font-normal text-muted-foreground">· {b.customerName}</span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-senja-800">{t.booking.expiresIn(formatDuration(Date.parse(b.holdExpiresAt!) - now.getTime()))}</span> ·{" "}
+                    <span className="tabular">{formatRupiah(b.total)}</span>
+                  </p>
+                </Row>
+              ))}
+            </Widget>
+          )}
           <Widget title={d.widgets.prep} count={data.prep.count} href="/pemesanan?view=perlu-persiapan" empty={d.empty.prep}>
             {data.prep.rows.map((b) => (
               <Row key={b.id} href={`/pemesanan/${b.id}`}>
@@ -85,7 +97,16 @@ export default async function BerandaPage() {
           </Widget>
           <Widget title={d.widgets.notAcked} count={data.notAcked.count} empty={d.empty.notAcked}>
             {data.notAcked.rows.map((a) => (
-              <Row key={`${a.bookingId}-${a.guideId}`} href={`/pemesanan/${a.bookingId}`} action={<ResendButton bookingId={a.bookingId} guideId={a.guideId} />}>
+              <Row
+                key={`${a.bookingId}-${a.guideId}`}
+                href={`/pemesanan/${a.bookingId}`}
+                action={
+                  <span className="flex flex-col items-end gap-1 sm:flex-row sm:items-center">
+                    <ResendButton bookingId={a.bookingId} guideId={a.guideId} />
+                    {me.role === "admin" && <ForceAckButton bookingId={a.bookingId} guideId={a.guideId} guideName={a.guideName} size="sm" />}
+                  </span>
+                }
+              >
                 <p className="font-medium">
                   {a.guideName} <span className="font-normal text-muted-foreground tabular">· {a.code}</span>
                 </p>
@@ -109,16 +130,18 @@ export default async function BerandaPage() {
               ))}
             </Widget>
           )}
-          <Widget title={d.widgets.balance} count={data.balance.count} empty={d.empty.balance}>
-            {data.balance.rows.map((b) => (
-              <Row key={b.id} href={`/pemesanan/${b.id}`}>
-                <p className="font-medium tabular">{b.code}</p>
-                <p className={cn("text-sm font-medium", b.balance > 0 ? "text-senja-800" : "text-danau-700")}>
-                  {b.balance > 0 ? t.payment.underpaid(formatRupiah(b.balance)) : t.payment.overpaid(formatRupiah(-b.balance))}
-                </p>
-              </Row>
-            ))}
-          </Widget>
+          {paymentConfirmation && (
+            <Widget title={d.widgets.balance} count={data.balance.count} empty={d.empty.balance}>
+              {data.balance.rows.map((b) => (
+                <Row key={b.id} href={`/pemesanan/${b.id}`}>
+                  <p className="font-medium tabular">{b.code}</p>
+                  <p className={cn("text-sm font-medium", b.balance > 0 ? "text-senja-800" : "text-danau-700")}>
+                    {b.balance > 0 ? t.payment.underpaid(formatRupiah(b.balance)) : t.payment.overpaid(formatRupiah(-b.balance))}
+                  </p>
+                </Row>
+              ))}
+            </Widget>
+          )}
           <Widget title={d.widgets.feedback} href="/laporan?tab=ulasan" empty={d.empty.feedback} count={data.feedback.length} hideCount>
             {data.feedback.map((f) => {
               const low = f.guides.some((g) => g.rating <= settings.low_rating_threshold);
@@ -226,6 +249,7 @@ function TodayWidget({ data, nowTime }: { data: Dashboard; nowTime: string }) {
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-medium tabular">
                       {b.code} <span className="font-normal text-muted-foreground">· {b.customerName}</span>
+                      {b.merged > 0 && <span className="ml-1 text-xs font-medium text-danau-700">{t.merge.plusMerged(b.merged)}</span>}
                     </p>
                     <StatusBadge status={b.status} />
                   </div>

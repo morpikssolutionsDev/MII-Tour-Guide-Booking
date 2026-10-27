@@ -13,13 +13,17 @@ export type FeedbackInput = {
   consent: boolean;
 };
 
-/** Guides that must be rated: the booking's non-released assignments (10 §8). */
+/**
+ * Guides that must be rated: the booking's non-released assignments (10 §8), or its shared
+ * tour host's for a merged booking (12 BR-12-M1).
+ */
 export async function ratedGuides(ex: Executor, bookingId: string) {
+  const [owner] = await ex.select({ mergeGroupId: bookings.mergeGroupId }).from(bookings).where(eq(bookings.id, bookingId));
   return ex
     .select({ id: guides.id, displayName: guides.displayName, photoUrl: guides.photoUrl, fullName: guides.fullName })
     .from(bookingGuides)
     .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
-    .where(and(eq(bookingGuides.bookingId, bookingId), isNull(bookingGuides.releasedAt)));
+    .where(and(eq(bookingGuides.bookingId, owner?.mergeGroupId ?? bookingId), isNull(bookingGuides.releasedAt)));
 }
 
 /** Exactly one 1–5 rating per assigned guide (BR-10-3). */

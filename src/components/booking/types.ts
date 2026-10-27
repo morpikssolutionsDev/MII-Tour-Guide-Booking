@@ -5,6 +5,8 @@ export type WizardConfigView = {
   today: string;
   maxDate: string;
   holdHours: number;
+  /** 12 BR-12-P1: false = bookings are confirmed and paid by the system at creation. */
+  paymentConfirmation: boolean;
   languages: { id: string; code: string; nameId: string }[];
   packages: {
     id: string;

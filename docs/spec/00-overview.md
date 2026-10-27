@@ -109,8 +109,9 @@ Every booking records **`channel`** (`sales` · `call_center` · `on_the_spot`) 
 | `09-notifikasi.md` | Notifications | Outbox, in-app bell, event catalogue, templates | 4, 5, 7 |
 | `10-ulasan.md` | Feedback | Public feedback page, token links, staff fallback, low-rating alert | 7 |
 | `11-beranda-laporan.md` | Home & reports | Beranda, KPIs, charts, guide performance, CSV export | 7 |
+| [`12-perubahan-fase-2.md`](12-perubahan-fase-2.md) | Phase-2 changes | Merge bookings (shared tour), payment-confirmation bypass flag, team email via SMTP with xlsx, admin force confirm | 2, 4, 5 |
 
-Dependency order for implementation: `01 → 04 → 02 → 03 → 05 → 06 → 07 → 09 → 08 → 10 → 11`.
+Dependency order for implementation: `01 → 04 → 02 → 03 → 05 → 06 → 07 → 09 → 08 → 10 → 11 → 12`.
 
 ## 6. Domain model (high level)
 
@@ -308,6 +309,9 @@ URL paths are Indonesian to match the UI. Code identifiers are English.
 | `STORAGE_DRIVER` | `local` | `vercel-blob` |
 | `BLOB_READ_WRITE_TOKEN` | — | Vercel Blob token |
 | `APP_BASE_URL` | `http://localhost:3000` | production URL (used in feedback links) |
+| `PAYMENT_CONFIRMATION` | unset (off) | unset (off); `true` restores 06 ([`12` BR-12-P1](12-perubahan-fase-2.md#5-business-rules)) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | local sink, e.g. `localhost` / `1025` / `false` | provider values |
+| `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | — / — / any sender | provider credentials and sender ([`12` §4](12-perubahan-fase-2.md#4-data-model)) |
 
 ## 10. Seed data
 

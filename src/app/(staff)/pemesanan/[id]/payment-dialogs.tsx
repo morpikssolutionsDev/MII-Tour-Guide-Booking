@@ -1,6 +1,6 @@
 "use client";
 
-import { Banknote, CreditCard, Landmark, QrCode, TriangleAlert } from "lucide-react";
+import { Banknote, Cpu, CreditCard, Landmark, QrCode, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Field, fieldAria } from "@/components/common/field";
@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { PAYMENT_METHODS, type PaymentMethod } from "@/db/schema";
+import { MANUAL_PAYMENT_METHODS, type ManualPaymentMethod, type PaymentMethod } from "@/db/schema";
 import { toWib } from "@/domain/time";
 import { useAction } from "@/hooks/use-action";
 import { t } from "@/i18n/id";
@@ -25,12 +25,12 @@ import { formatRupiah } from "@/lib/format";
 import { confirmPayment, recordAdjustment, voidPayment } from "@/server/payments/actions";
 
 const sp = t.payment;
-export const METHOD_ICONS: Record<PaymentMethod, typeof Landmark> = { bank_transfer: Landmark, qris: QrCode, cash: Banknote, edc: CreditCard };
+export const METHOD_ICONS: Record<PaymentMethod, typeof Landmark> = { bank_transfer: Landmark, qris: QrCode, cash: Banknote, edc: CreditCard, system: Cpu };
 
-function MethodPicker({ value, onChange }: { value: PaymentMethod; onChange: (m: PaymentMethod) => void }) {
+function MethodPicker({ value, onChange }: { value: ManualPaymentMethod; onChange: (m: ManualPaymentMethod) => void }) {
   return (
-    <ToggleGroup type="single" variant="outline" value={value} onValueChange={(v) => v && onChange(v as PaymentMethod)} className="grid w-full grid-cols-2 sm:grid-cols-4">
-      {PAYMENT_METHODS.map((m) => {
+    <ToggleGroup type="single" variant="outline" value={value} onValueChange={(v) => v && onChange(v as ManualPaymentMethod)} className="grid w-full grid-cols-2 sm:grid-cols-4">
+      {MANUAL_PAYMENT_METHODS.map((m) => {
         const Icon = METHOD_ICONS[m];
         return (
           <ToggleGroupItem key={m} value={m} className="h-11 gap-1.5 data-[state=on]:bg-danau-50 data-[state=on]:text-danau-800 md:h-10">
@@ -59,7 +59,7 @@ function PaidAtInputs({ date, time, onDate, onTime, error }: { date: string; tim
 /** 06 §3.2 "Tandai Lunas". */
 export function MarkPaidDialog({ bookingId, code, total, onClose }: { bookingId: string; code: string; total: number; onClose: () => void }) {
   const nowWib = toWib(new Date());
-  const [method, setMethod] = useState<PaymentMethod>("bank_transfer");
+  const [method, setMethod] = useState<ManualPaymentMethod>("bank_transfer");
   const [amount, setAmount] = useState<number | null>(total);
   const [paidDate, setPaidDate] = useState(nowWib.date);
   const [paidTime, setPaidTime] = useState(nowWib.time);
@@ -159,7 +159,7 @@ export function AdjustmentDialog({ bookingId, balance, onClose }: { bookingId: s
   const nowWib = toWib(new Date());
   const [direction, setDirection] = useState<"charge" | "refund">(balance < 0 ? "refund" : "charge");
   const [amount, setAmount] = useState<number | null>(balance !== 0 ? Math.abs(balance) : null);
-  const [method, setMethod] = useState<PaymentMethod>("bank_transfer");
+  const [method, setMethod] = useState<ManualPaymentMethod>("bank_transfer");
   const [paidDate, setPaidDate] = useState(nowWib.date);
   const [paidTime, setPaidTime] = useState(nowWib.time);
   const [file, setFile] = useState<File | null>(null);

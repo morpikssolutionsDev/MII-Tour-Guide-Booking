@@ -19,7 +19,8 @@ type PaymentView = {
   reference: string | null;
   proofUrl: string | null;
   note: string | null;
-  recordedByName: string;
+  /** null = recorded by the system (12 BR-12-P8). */
+  recordedByName: string | null;
   voidedAt: string | null;
   voidedByName: string | null;
   voidReason: string | null;
@@ -83,7 +84,7 @@ export function PaymentSection({
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {sp.paidAt} {formatDateTime(p.paidAt)}
-                    {p.reference && ` · ${p.reference}`} · {sp.by(p.recordedByName)}
+                    {p.reference && ` · ${p.reference}`} · {sp.by(p.recordedByName ?? t.common.systemName)}
                   </p>
                   {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
                 </div>

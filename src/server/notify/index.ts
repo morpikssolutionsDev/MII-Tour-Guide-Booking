@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import type { PriceSnapshot } from "@/domain/pricing";
 import { daysBetween } from "@/domain/time";
+import { isPaymentConfirmationEnabled } from "@/lib/flags";
 import { getSettings } from "../settings";
 import * as tpl from "./templates";
 
@@ -169,8 +170,11 @@ export const notify = {
   /** 05: tourist gets details, total, hold deadline and payment instructions. */
   async bookingCreated(ex: Executor, bookingId: string) {
     const b = await loadBookingFacts(ex, bookingId);
-    const { payment_instructions_en } = await getSettings(ex);
-    await insertRows(ex, [whatsapp("booking_created", b, tpl.waBookingCreated(b.facts, payment_instructions_en))]);
+    // 12 BR-12-P9: without payment confirmation the booking is already confirmed.
+    const rendered = isPaymentConfirmationEnabled()
+      ? tpl.waBookingCreated(b.facts, (await getSettings(ex)).payment_instructions_en)
+      : tpl.waBookingConfirmed(b.facts);
+    await insertRows(ex, [whatsapp("booking_created", b, rendered)]);
     await logOnBooking(ex, bookingId, "booking_created", 1);
   },
 
@@ -233,6 +237,27 @@ export const notify = {
     }
     await insertRows(ex, rows);
     await logOnBooking(ex, bookingId, "booking_rescheduled", rows.length);
+  },
+
+  /** 12 BR-12-M7 / M8: tell the host's guides that the shared tour changed. */
+  async tourMerged(ex: Executor, hostId: string, opts: { change: "merged" | "split"; code: string; people: number; total: number }) {
+    const b = await loadBookingFacts(ex, hostId);
+    const assigned = await ex
+      .select({ guideId: bookingGuides.guideId })
+      .from(bookingGuides)
+      .where(and(eq(bookingGuides.bookingId, hostId), isNull(bookingGuides.releasedAt)));
+    const recipients = await guideUsers(ex, assigned.map((a) => a.guideId));
+    await insertRows(ex, recipients.map((r) => inApp("tour_merged", r, tpl.inAppTourMerged(b.facts, opts), { bookingId: hostId }, { ...opts, guideId: r.guideId })));
+    await logOnBooking(ex, hostId, "tour_merged", recipients.length);
+  },
+
+  /** 12 BR-12-F3 */
+  async guideAckForced(ex: Executor, bookingId: string, guideId: string, adminName: string, reason: string) {
+    const b = await loadBookingFacts(ex, bookingId);
+    const [r] = await guideUsers(ex, [guideId]);
+    if (!r) return;
+    await insertRows(ex, [inApp("guide_ack_forced", r, tpl.inAppGuideAckForced(b.facts, adminName, reason), { bookingId }, { guideId, reason })]);
+    await logOnBooking(ex, bookingId, "guide_ack_forced", 1);
   },
 
   async guideReleased(ex: Executor, bookingId: string, guideIds: string[], before: { tourDate: string; slotStart: string; slotEnd: string }) {

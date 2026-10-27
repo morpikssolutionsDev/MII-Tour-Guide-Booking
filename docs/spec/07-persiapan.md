@@ -88,10 +88,14 @@ Unique (`booking_id`, `system_key`) where `system_key` is not null.
 
    Notifying at confirmation means any booking confirmed at least `notice_days` ahead meets the H-2 target; later confirmations are flagged.
 3. **BR-07-3 — Acknowledgement.** "Saya siap" ([`08`](08-portal-guide.md)) sets `acknowledged_at = now` on the guide's active assignment and appends `guide_acknowledged`. It is allowed while the booking is `confirmed` or `ready` and the slot hasn't started. It is idempotent: a second tap changes nothing.
+
+    > **Diubah oleh 12:** admin can acknowledge on the guide's behalf with a reason ("Konfirmasi atas nama guide", [BR-12-F1–F6](12-perubahan-fase-2.md#5-business-rules)).
 4. **BR-07-4 — System item.** After every acknowledgement, assignment change, or acknowledgement reset, the system item `guide_ack` is recomputed:
    - **checked** iff every active assignment has `acknowledged_at` set;
    - when it becomes checked, set `checked_at = now`, `checked_by = null`, and append `checklist_ticked` (system actor);
    - when it becomes unchecked, clear it and append `checklist_unticked`.
+
+    > **Diubah oleh 12:** for a merged member, `guide_ack` follows the host's assignments ([BR-12-M10](12-perubahan-fase-2.md#5-business-rules)).
 5. **BR-07-5 — Automatic Siap.** After any checklist change (manual or system), for a booking in `confirmed` or `ready`:
    - all items checked → status `ready`;
    - otherwise → status `confirmed`.

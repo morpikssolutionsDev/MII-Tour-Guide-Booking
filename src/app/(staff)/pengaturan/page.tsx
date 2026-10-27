@@ -5,6 +5,7 @@ import { t } from "@/i18n/id";
 import { requireRole } from "@/server/session";
 import { BriefingSection } from "./briefing-section";
 import { ChecklistSection } from "./checklist-section";
+import { EmailSection } from "./email-section";
 import { GeneralSection } from "./general-section";
 import { LanguagesSection } from "./languages-section";
 import { SlotsSection } from "./slots-section";
@@ -17,6 +18,7 @@ const TABS = [
   { value: "daftar-periksa", label: t.settings.tabs.checklist },
   { value: "materi", label: t.settings.tabs.briefing },
   { value: "umum", label: t.settings.tabs.umum },
+  { value: "email", label: t.emailSettings.tab },
 ];
 
 /** 04 §3: admin-only tabbed settings. */
@@ -34,6 +36,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "daftar-periksa" && <ChecklistSection />}
       {tab === "materi" && <BriefingSection />}
       {tab === "umum" && <GeneralSection />}
+      {tab === "email" && <EmailSection />}
     </PageContainer>
   );
 }
