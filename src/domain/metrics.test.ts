@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { bucketsFor, delta, granularityFor, previousPeriod, ratio, toCsv } from "./metrics";
+import { bucketsFor, delta, granularityFor, leadTimeBucket, previousPeriod, ratio, toCsv, trailingMonths } from "./metrics";
 
 describe("report metrics (11 §5)", () => {
+  it("lead time: H-3 or more, H-2, and H-1 including same-day orders", () => {
+    expect(leadTimeBucket("2026-10-01", "2026-10-10")).toBe("h3");
+    expect(leadTimeBucket("2026-10-07", "2026-10-10")).toBe("h3");
+    expect(leadTimeBucket("2026-10-08", "2026-10-10")).toBe("h2");
+    expect(leadTimeBucket("2026-10-09", "2026-10-10")).toBe("h1");
+    expect(leadTimeBucket("2026-10-10", "2026-10-10")).toBe("h1");
+  });
+
+  it("trend covers the trailing calendar months, across a year boundary", () => {
+    expect(trailingMonths({ from: "2026-10-01", to: "2026-10-31" }, 7)).toEqual({ from: "2026-04-01", to: "2026-10-31" });
+    expect(trailingMonths({ from: "2027-01-01", to: "2027-02-14" }, 7)).toEqual({ from: "2026-08-01", to: "2027-02-14" });
+  });
+
   it("previous period has the same length, immediately before", () => {
     expect(previousPeriod({ from: "2026-10-01", to: "2026-10-31" })).toEqual({ from: "2026-08-31", to: "2026-09-30" });
     expect(previousPeriod({ from: "2026-10-25", to: "2026-10-25" })).toEqual({ from: "2026-10-24", to: "2026-10-24" });

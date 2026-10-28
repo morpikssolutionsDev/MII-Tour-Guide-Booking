@@ -16,10 +16,21 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
 async function AuthenticatedShell({ children }: { children: React.ReactNode }) {
   const user = await requireRole("admin", "staff");
-  const unread = await unreadCountFor(user.id);
+  // The unread count streams on its own so it never holds up the shell.
   return (
-    <StaffShell user={{ name: user.name, role: user.role }} bell={<NotificationBell initialCount={unread} />}>
+    <StaffShell
+      user={{ name: user.name, role: user.role }}
+      bell={
+        <Suspense fallback={<NotificationBell initialCount={0} />}>
+          <UnreadBell userId={user.id} />
+        </Suspense>
+      }
+    >
       {children}
     </StaffShell>
   );
+}
+
+async function UnreadBell({ userId }: { userId: string }) {
+  return <NotificationBell initialCount={await unreadCountFor(userId)} />;
 }

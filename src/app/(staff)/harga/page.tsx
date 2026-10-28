@@ -33,14 +33,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
     <PageContainer className="space-y-5">
       <PageHeader title={sp.title} />
       <UrlTabs tabs={TABS} active={tab} />
-      {tab === "paket" && (
-        <PackagesTab
-          canEdit={canEdit}
-          packages={await listPackagesFull()}
-          facilities={await listFacilities()}
-          addons={await listAddons()}
-        />
-      )}
+      {tab === "paket" && <PackagesTabData canEdit={canEdit} />}
       {tab === "addon" && <AddonsTab canEdit={canEdit} addons={await listAddons()} />}
       {tab === "fasilitas" && <FacilitiesTab canEdit={canEdit} facilities={await listFacilities()} />}
       {tab === "aturan" && <RulesTab canEdit={canEdit} rules={await listPriceRules()} />}
@@ -48,6 +41,11 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
       {tab === "simulasi" && <SimulatorTab />}
     </PageContainer>
   );
+}
+
+async function PackagesTabData({ canEdit }: { canEdit: boolean }) {
+  const [packages, facilities, addons] = await Promise.all([listPackagesFull(), listFacilities(), listAddons()]);
+  return <PackagesTab canEdit={canEdit} packages={packages} facilities={facilities} addons={addons} />;
 }
 
 async function SimulatorTab() {

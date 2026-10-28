@@ -16,10 +16,21 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
 async function AuthenticatedPortal({ children }: { children: React.ReactNode }) {
   const me = await requireGuide();
-  const unread = await unreadCountFor(me.id);
+  // The unread count streams on its own so it never holds up the shell.
   return (
-    <PortalShell bell={<NotificationBell initialCount={unread} />} initials={initialsOf(me.name)}>
+    <PortalShell
+      bell={
+        <Suspense fallback={<NotificationBell initialCount={0} />}>
+          <UnreadBell userId={me.id} />
+        </Suspense>
+      }
+      initials={initialsOf(me.name)}
+    >
       {children}
     </PortalShell>
   );
+}
+
+async function UnreadBell({ userId }: { userId: string }) {
+  return <NotificationBell initialCount={await unreadCountFor(userId)} />;
 }

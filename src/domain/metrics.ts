@@ -53,6 +53,24 @@ export function bucketsFor(p: Period, g: Granularity): string[] {
   return out;
 }
 
+export type LeadTime = "h3" | "h2" | "h1";
+
+/** Ringkasan "Lead time order": days between the booking's creation (WIB date) and the tour. Same-day orders count as H-1. */
+export function leadTimeBucket(createdDate: string, tourDate: string): LeadTime {
+  const days = daysBetween(createdDate, tourDate);
+  if (days >= 3) return "h3";
+  if (days === 2) return "h2";
+  return "h1";
+}
+
+/** Ringkasan "Tren order & revenue": the `months` calendar months ending with the period's last month. */
+export function trailingMonths(p: Period, months: number): Period {
+  const [y, m] = p.to.split("-").map(Number);
+  const index = y * 12 + (m - 1) - (months - 1);
+  const from = `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
+  return { from, to: p.to };
+}
+
 /** BR-11-10 CSV: UTF-8 with BOM, comma separated, RFC 4180 quoting. */
 export function toCsv(header: string[], rows: (string | number | null | undefined)[][]): string {
   const cell = (v: string | number | null | undefined) => {

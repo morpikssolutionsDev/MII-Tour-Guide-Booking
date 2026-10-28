@@ -212,7 +212,7 @@ export async function getBookingDetail(id: string) {
   const b = row.booking;
   const guidesOf = b.mergeGroupId ?? b.id;
 
-  const [assigned, paymentRows, checklist, events, messages, fb, linked, visits, briefing] = await Promise.all([
+  const [assigned, paymentRows, checklist, events, messages, fb, ratings, linked, visits, briefing, group] = await Promise.all([
     db
       .select({
         assignment: bookingGuides,
@@ -240,7 +240,14 @@ export async function getBookingDetail(id: string) {
       .where(eq(bookingEvents.bookingId, id))
       .orderBy(desc(bookingEvents.at)),
     db.select().from(notifications).where(eq(notifications.bookingId, id)).orderBy(desc(notifications.createdAt)),
-    db.select().from(feedback).where(eq(feedback.bookingId, id)),
+    db.select({ feedback, enteredByName: users.name }).from(feedback).leftJoin(users, eq(users.id, feedback.enteredBy)).where(eq(feedback.bookingId, id)),
+    // Feedback is unique per booking, so its guide ratings can be read by booking id in the same batch.
+    db
+      .select({ guideId: feedbackGuideRatings.guideId, rating: feedbackGuideRatings.rating, name: guides.displayName })
+      .from(feedbackGuideRatings)
+      .innerJoin(feedback, eq(feedback.id, feedbackGuideRatings.feedbackId))
+      .innerJoin(guides, eq(guides.id, feedbackGuideRatings.guideId))
+      .where(eq(feedback.bookingId, id)),
     b.groupRef
       ? db
           .select({ id: bookings.id, code: bookings.code, status: bookings.status })
@@ -249,31 +256,28 @@ export async function getBookingDetail(id: string) {
       : [],
     customerVisitCounts([b.customerId]),
     briefingForPackage(b.packageId),
+    sharedTour(b),
   ]);
 
-  const voidedByIds = paymentRows.map((p) => p.payment.voidedBy).filter(Boolean) as string[];
-  const voidedBy = voidedByIds.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, voidedByIds)) : [];
-  const ackByIds = assigned.map((a) => a.assignment.acknowledgedBy).filter(Boolean) as string[];
-  const ackBy = ackByIds.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ackByIds)) : [];
+  // Names referenced by the rows above, resolved together in a second round trip.
+  const userIds = [
+    ...new Set([
+      ...(paymentRows.map((p) => p.payment.voidedBy).filter(Boolean) as string[]),
+      ...(assigned.map((a) => a.assignment.acknowledgedBy).filter(Boolean) as string[]),
+    ]),
+  ];
   const guideIdsInEvents = new Set<string>();
   for (const e of events) {
     const payload = e.event.payload as { guideId?: string };
     if (payload?.guideId) guideIdsInEvents.add(payload.guideId);
   }
-  const eventGuides = guideIdsInEvents.size
-    ? await db.select({ id: guides.id, name: guides.displayName }).from(guides).where(inArray(guides.id, [...guideIdsInEvents]))
-    : [];
-  const feedbackRow = fb[0] ?? null;
-  const ratings = feedbackRow
-    ? await db
-        .select({ guideId: feedbackGuideRatings.guideId, rating: feedbackGuideRatings.rating, name: guides.displayName })
-        .from(feedbackGuideRatings)
-        .innerJoin(guides, eq(guides.id, feedbackGuideRatings.guideId))
-        .where(eq(feedbackGuideRatings.feedbackId, feedbackRow.id))
-    : [];
-  const enteredByName = feedbackRow?.enteredBy
-    ? (await db.select({ name: users.name }).from(users).where(eq(users.id, feedbackRow.enteredBy)))[0]?.name ?? null
-    : null;
+  const [userNames, eventGuides] = await Promise.all([
+    userIds.length ? db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds)) : [],
+    guideIdsInEvents.size ? db.select({ id: guides.id, name: guides.displayName }).from(guides).where(inArray(guides.id, [...guideIdsInEvents])) : [],
+  ]);
+  const userName = (id: string | null) => userNames.find((u) => u.id === id)?.name ?? null;
+  const feedbackRow = fb[0]?.feedback ?? null;
+  const enteredByName = fb[0]?.enteredByName ?? null;
 
   const validPayments = paymentRows.filter((p) => !p.payment.voidedAt);
   const paid = validPayments.reduce((sum, p) => sum + p.payment.amount, 0);
@@ -291,12 +295,12 @@ export async function getBookingDetail(id: string) {
       ...a.guide,
       ...a.assignment,
       assignmentId: a.assignment.id,
-      acknowledgedByName: ackBy.find((u) => u.id === a.assignment.acknowledgedBy)?.name ?? null,
+      acknowledgedByName: userName(a.assignment.acknowledgedBy),
     })),
     payments: paymentRows.map((p) => ({
       ...p.payment,
       recordedByName: p.recordedByName,
-      voidedByName: voidedBy.find((v) => v.id === p.payment.voidedBy)?.name ?? null,
+      voidedByName: userName(p.payment.voidedBy),
     })),
     paymentSummary: { total: b.totalAmount, paid, balance: b.totalAmount - paid, hasPayment: validPayments.some((p) => p.payment.kind === "payment") },
     checklist: checklist.map((c) => ({ ...c.item, checkedByName: c.checkedByName })),
@@ -309,7 +313,7 @@ export async function getBookingDetail(id: string) {
     feedback: feedbackRow ? { ...feedbackRow, ratings, enteredByName } : null,
     linked,
     briefing,
-    group: await sharedTour(b),
+    group,
   };
 }
 

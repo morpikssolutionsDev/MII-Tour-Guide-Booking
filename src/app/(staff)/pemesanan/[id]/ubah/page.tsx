@@ -18,10 +18,9 @@ export default async function ReschedulePage({ params }: { params: Promise<{ id:
   const me = await requireRole("admin", "staff");
   const { id } = await params;
   await syncHolds();
-  const state = await loadRescheduleState(id);
+  const [state, detail] = await Promise.all([loadRescheduleState(id), getBookingDetail(id)]);
   if (!state) notFound();
   if (!canReschedule(state.booking, new Date())) redirect(`/pemesanan/${id}`);
-  const detail = await getBookingDetail(id);
   const b = state.booking;
   const config = await loadWizardConfig({ packageId: b.packageId, languageId: b.languageId });
 

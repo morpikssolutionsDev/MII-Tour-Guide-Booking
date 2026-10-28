@@ -2,16 +2,16 @@ import "server-only";
 import { toCsv } from "@/domain/metrics";
 import { toWib, wibToday } from "@/domain/time";
 import { t } from "@/i18n/id";
-import { getBookingsBreakdown, getFeedbackReport, getGuidePerformance, getReportSummary, getRevenueTrend, getStaffSales, type Dimension } from "./queries";
+import { getBookingsBreakdown, getFeedbackReport, getGuidePerformance, getLeadTime, getOrderRevenueTrend, getReportSummary, getStaffSales, type Dimension } from "./queries";
 import { resolveFeedbackTab, resolveFilters, resolvePeriod, type Search } from "./params";
 
 const r = t.reports;
 
 /** Export keys (11 BR-11-10) mapped to the file stem `laporan-{tabel}`. */
-export const CSV_KEYS = ["kanal", "staf", "bahasa", "slot", "tren", "status", "penjualan-staf", "kinerja-guide", "ulasan"] as const;
+export const CSV_KEYS = ["kanal", "staf", "bahasa", "slot", "paket", "lead-time", "tren", "status", "penjualan-staf", "kinerja-guide", "ulasan"] as const;
 export type CsvKey = (typeof CSV_KEYS)[number];
 
-const DIMENSIONS: Partial<Record<CsvKey, Dimension>> = { kanal: "channel", staf: "staff", bahasa: "language", slot: "slot" };
+const DIMENSIONS: Partial<Record<CsvKey, Dimension>> = { kanal: "channel", staf: "staff", bahasa: "language", slot: "slot", paket: "package" };
 const decimal = (v: number | null, digits = 2) => (v === null ? "" : Number(v.toFixed(digits)));
 
 /** BR-11-10: full result under the current filters; money plain, dates ISO, ratios as decimals. */
@@ -25,20 +25,19 @@ export async function buildReportCsv(key: CsvKey, search: Search): Promise<{ fil
     const rows = await getBookingsBreakdown(period, filters, dimension);
     const label = (row: (typeof rows)[number]) =>
       dimension === "channel" ? t.channels[row.key as keyof typeof t.channels] : row.inactive ? `${row.label} ${t.common.inactiveSuffix}` : row.label;
-    const head = { channel: r.filters.channel, staff: r.staffSales.cols.staff, language: r.filters.language, slot: "Slot" }[dimension];
+    const head = { channel: r.filters.channel, staff: r.staffSales.cols.staff, language: r.filters.language, slot: "Slot", package: r.filters.package }[dimension];
     return { filename, body: toCsv([head, r.charts.count], rows.map((row) => [label(row), row.count])) };
   }
 
   switch (key) {
+    case "lead-time": {
+      const lead = await getLeadTime(period, filters);
+      const s = r.summary.leadTime;
+      return { filename, body: toCsv([s.title, r.charts.count], (["h3", "h2", "h1"] as const).map((k) => [s[k], lead[k]])) };
+    }
     case "tren": {
-      const { buckets } = await getRevenueTrend(period, filters);
-      return {
-        filename,
-        body: toCsv(
-          ["Periode", t.channels.sales, t.channels.call_center, t.channels.on_the_spot, r.charts.amount],
-          buckets.map((b) => [b.bucket, b.sales, b.call_center, b.on_the_spot, b.total]),
-        ),
-      };
+      const buckets = await getOrderRevenueTrend(period, filters);
+      return { filename, body: toCsv(["Bulan", r.summary.trend.orders, r.charts.amount], buckets.map((b) => [b.bucket.slice(0, 7), b.orders, b.revenue])) };
     }
     case "status": {
       const summary = await getReportSummary(period, filters);

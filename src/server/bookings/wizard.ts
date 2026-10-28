@@ -107,22 +107,30 @@ export async function parsePrefill(search: Search, config: WizardConfig): Promis
 
 /** Current values of a booking for the reschedule page (05 §3.4). */
 export async function loadRescheduleState(bookingId: string) {
-  const booking = await db.query.bookings.findFirst({ where: eq(bookings.id, bookingId) });
-  if (!booking) return null;
-  const assigned = await db
-    .select({ guideId: bookingGuides.guideId, name: guides.displayName })
-    .from(bookingGuides)
-    .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
-    .where(and(eq(bookingGuides.bookingId, bookingId), isNull(bookingGuides.releasedAt)));
+  const [found, assigned] = await Promise.all([
+    db
+      .select({ booking: bookings, languageName: languages.nameId, customerName: customers.name })
+      .from(bookings)
+      .leftJoin(languages, eq(languages.id, bookings.languageId))
+      .leftJoin(customers, eq(customers.id, bookings.customerId))
+      .where(eq(bookings.id, bookingId))
+      .limit(1),
+    db
+      .select({ guideId: bookingGuides.guideId, name: guides.displayName })
+      .from(bookingGuides)
+      .innerJoin(guides, eq(guides.id, bookingGuides.guideId))
+      .where(and(eq(bookingGuides.bookingId, bookingId), isNull(bookingGuides.releasedAt))),
+  ]);
+  const row = found[0];
+  if (!row) return null;
+  const booking = row.booking;
   const snapshot = booking.priceSnapshot as PriceSnapshot;
-  const [language] = await db.select({ nameId: languages.nameId }).from(languages).where(eq(languages.id, booking.languageId));
-  const customer = await db.query.customers.findFirst({ where: eq(customers.id, booking.customerId), columns: { name: true } });
   return {
     booking,
     snapshot,
     guides: assigned,
-    languageName: language?.nameId ?? "",
-    customerName: customer?.name ?? "",
+    languageName: row.languageName ?? "",
+    customerName: row.customerName ?? "",
     addonIds: snapshot.addons.filter((a) => !a.included).map((a) => a.id),
   };
 }

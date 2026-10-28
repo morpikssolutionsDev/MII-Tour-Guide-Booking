@@ -25,6 +25,7 @@ const dateCompact = new Intl.DateTimeFormat("id-ID", {
 });
 const dayMonth = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" });
 const monthYear = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric", timeZone: "UTC" });
+const monthShort = new Intl.DateTimeFormat("id-ID", { month: "short", timeZone: "UTC" });
 const dateLongEn = new Intl.DateTimeFormat("en-GB", {
   weekday: "long",
   day: "numeric",
@@ -85,6 +86,11 @@ export function formatDayMonth(date: string): string {
 /** `Oktober 2026` */
 export function formatMonthYear(date: string): string {
   return monthYear.format(asUtcDate(date));
+}
+
+/** `Okt` */
+export function formatMonthShort(date: string): string {
+  return monthShort.format(asUtcDate(date));
 }
 
 /** `09:00` → `09.00` */

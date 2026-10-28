@@ -20,7 +20,7 @@ import {
   type Channel,
 } from "@/db/schema";
 import { isGuideWorking } from "@/domain/availability";
-import { bucketStart, bucketsFor, granularityFor, ratio, type Period } from "@/domain/metrics";
+import { bucketStart, bucketsFor, leadTimeBucket, ratio, trailingMonths, type LeadTime, type Period } from "@/domain/metrics";
 import { addDays, daysBetween, eachDay, toWib, wibToUtc } from "@/domain/time";
 import { formatSlot } from "@/lib/format";
 
@@ -105,35 +105,26 @@ async function guidesForPeriod(p: Period, f: ReportFilters) {
 
 /** BR-11-4, overall and per guide. */
 async function utilisation(p: Period, f: ReportFilters) {
-  const [guideRows, [{ n: slotCount }]] = await Promise.all([
+  // All three in one round trip; booked counts are narrowed to the period's guides afterwards.
+  const [guideRows, [{ n: slotCount }], booked] = await Promise.all([
     guidesForPeriod(p, f),
     db.select({ n: sql<number>`count(*)` }).from(slots).where(eq(slots.isActive, true)),
+    db
+      .select({ guideId: bookingGuides.guideId, n: sql<number>`count(*)` })
+      .from(bookingGuides)
+      .innerJoin(bookings, eq(bookings.id, bookingGuides.bookingId))
+      .where(and(isNull(bookingGuides.releasedAt), inArray(bookings.status, BOOKED), inPeriod(p), ...bookingFilters({ ...f, guideIds: [] })))
+      .groupBy(bookingGuides.guideId),
   ]);
   const days = eachDay(p.from, p.to);
   const availableByGuide = new Map<string, number>();
   for (const g of guideRows) {
     availableByGuide.set(g.id, days.filter((d) => isGuideWorking(g, d)).length * Number(slotCount));
   }
-  const booked = guideRows.length
-    ? await db
-        .select({ guideId: bookingGuides.guideId, n: sql<number>`count(*)` })
-        .from(bookingGuides)
-        .innerJoin(bookings, eq(bookings.id, bookingGuides.bookingId))
-        .where(
-          and(
-            isNull(bookingGuides.releasedAt),
-            inArray(bookings.status, BOOKED),
-            inPeriod(p),
-            inArray(bookingGuides.guideId, guideRows.map((g) => g.id)),
-            ...bookingFilters({ ...f, guideIds: [] }),
-          ),
-        )
-        .groupBy(bookingGuides.guideId)
-    : [];
-  const bookedByGuide = new Map(booked.map((b) => [b.guideId, Number(b.n)]));
+  const bookedByGuide = new Map(booked.filter((b) => availableByGuide.has(b.guideId)).map((b) => [b.guideId, Number(b.n)]));
   const totalBooked = [...bookedByGuide.values()].reduce((s, n) => s + n, 0);
   const totalAvailable = [...availableByGuide.values()].reduce((s, n) => s + n, 0);
-  return { overall: ratio(totalBooked, totalAvailable), bookedByGuide, availableByGuide };
+  return { overall: ratio(totalBooked, totalAvailable), bookedByGuide, availableByGuide, activeGuides: guideRows.filter((g) => g.isActive).length };
 }
 
 async function ratingAverage(p: Period, f: ReportFilters) {
@@ -146,19 +137,22 @@ async function ratingAverage(p: Period, f: ReportFilters) {
   return { avg: row.avg === null ? null : Number(row.avg), count: Number(row.n) };
 }
 
-/** BR-11-5 */
+/**
+ * BR-11-5, in one query: lifetime completed tours of each customer who completed one in the period.
+ * Every such customer has a row (their in-period tour counts), so the rows are the denominator.
+ */
 async function returningShare(p: Period, f: ReportFilters) {
-  const inPeriodCustomers = await db
+  const inPeriodCustomers = db
     .selectDistinct({ customerId: bookings.customerId })
     .from(bookings)
     .where(and(inPeriod(p), inArray(bookings.status, DONE), ...bookingFilters(f)));
-  if (inPeriodCustomers.length === 0) return null;
   const lifetime = await db
     .select({ customerId: bookings.customerId, n: sql<number>`count(*)` })
     .from(bookings)
-    .where(and(inArray(bookings.customerId, inPeriodCustomers.map((c) => c.customerId)), inArray(bookings.status, DONE), lte(bookings.tourDate, p.to)))
+    .where(and(inArray(bookings.customerId, inPeriodCustomers), inArray(bookings.status, DONE), lte(bookings.tourDate, p.to)))
     .groupBy(bookings.customerId);
-  return lifetime.filter((r) => Number(r.n) >= 2).length / inPeriodCustomers.length;
+  if (lifetime.length === 0) return null;
+  return lifetime.filter((r) => Number(r.n) >= 2).length / lifetime.length;
 }
 
 /** BR-07-10, overall and per guide. */
@@ -194,6 +188,7 @@ export async function getReportSummary(p: Period, f: ReportFilters) {
     byStatus: counts.byStatus,
     revenue: rev,
     utilisation: util.overall,
+    activeGuides: util.activeGuides,
     rating: rating.avg,
     ratingCount: rating.count,
     returning,
@@ -205,9 +200,11 @@ export type ReportSummary = Awaited<ReturnType<typeof getReportSummary>>;
 
 /* ---------------- breakdowns (§3.2 charts) ---------------- */
 
-export type Dimension = "channel" | "staff" | "language" | "slot";
+export type Dimension = "channel" | "staff" | "language" | "slot" | "package";
+/** `code` is the language code (`en`), set for the language dimension only. */
+export type BreakdownRow = { key: string; label: string; count: number; inactive: boolean; code?: string };
 
-export async function getBookingsBreakdown(p: Period, f: ReportFilters, dimension: Dimension) {
+export async function getBookingsBreakdown(p: Period, f: ReportFilters, dimension: Dimension): Promise<BreakdownRow[]> {
   const where = and(inPeriod(p), ne(bookings.status, "cancelled"), ...bookingFilters(f));
   if (dimension === "channel") {
     const rows = await db.select({ key: bookings.channel, n: sql<number>`count(*)` }).from(bookings).where(where).groupBy(bookings.channel);
@@ -224,12 +221,21 @@ export async function getBookingsBreakdown(p: Period, f: ReportFilters, dimensio
   }
   if (dimension === "language") {
     const rows = await db
-      .select({ key: languages.id, label: languages.nameId, n: sql<number>`count(*)` })
+      .select({ key: languages.id, label: languages.nameId, code: languages.code, n: sql<number>`count(*)` })
       .from(bookings)
       .innerJoin(languages, eq(languages.id, bookings.languageId))
       .where(where)
       .groupBy(languages.id);
-    return rows.map((r) => ({ key: r.key, label: r.label, count: Number(r.n), inactive: false })).sort((a, b) => b.count - a.count);
+    return rows.map((r) => ({ key: r.key, label: r.label, code: r.code, count: Number(r.n), inactive: false })).sort((a, b) => b.count - a.count);
+  }
+  if (dimension === "package") {
+    const rows = await db
+      .select({ key: packages.id, label: packages.name, active: packages.isActive, n: sql<number>`count(*)` })
+      .from(bookings)
+      .innerJoin(packages, eq(packages.id, bookings.packageId))
+      .where(where)
+      .groupBy(packages.id);
+    return rows.map((r) => ({ key: r.key, label: r.label, count: Number(r.n), inactive: !r.active })).sort((a, b) => b.count - a.count);
   }
   const rows = await db
     .select({ start: bookings.slotStart, end: bookings.slotEnd, n: sql<number>`count(*)` })
@@ -240,25 +246,46 @@ export async function getBookingsBreakdown(p: Period, f: ReportFilters, dimensio
   return rows.map((r) => ({ key: `${r.start}-${r.end}`, label: formatSlot(r.start, r.end), count: Number(r.n), inactive: false }));
 }
 
-/** §3.2 "Tren pendapatan", optionally split by channel. */
-export async function getRevenueTrend(p: Period, f: ReportFilters) {
-  const range = instantRange(p);
-  const g = granularityFor(p);
+/** Ringkasan "Lead time order": non-cancelled bookings by how far ahead of the tour they were created. */
+export async function getLeadTime(p: Period, f: ReportFilters): Promise<Record<LeadTime, number>> {
   const rows = await db
-    .select({ paidAt: payments.paidAt, amount: payments.amount, channel: bookings.channel })
-    .from(payments)
-    .innerJoin(bookings, eq(bookings.id, payments.bookingId))
-    .where(and(isNull(payments.voidedAt), gte(payments.paidAt, range.from), lt(payments.paidAt, range.to), ...bookingFilters(f)));
-  const buckets = bucketsFor(p, g).map((start) => ({ bucket: start, total: 0, sales: 0, call_center: 0, on_the_spot: 0 }));
+    .select({ createdAt: bookings.createdAt, tourDate: bookings.tourDate })
+    .from(bookings)
+    .where(and(inPeriod(p), ne(bookings.status, "cancelled"), ...bookingFilters(f)));
+  const out = { h3: 0, h2: 0, h1: 0 };
+  for (const r of rows) out[leadTimeBucket(toWib(new Date(r.createdAt)).date, r.tourDate)]++;
+  return out;
+}
+
+export const TREND_MONTHS = 7;
+
+/** Ringkasan "Tren order & revenue": monthly orders (by tour date) and revenue (BR-11-3) for the trailing months. */
+export async function getOrderRevenueTrend(p: Period, f: ReportFilters) {
+  const span = trailingMonths(p, TREND_MONTHS);
+  const range = instantRange(span);
+  const [orders, paid] = await Promise.all([
+    db
+      .select({ tourDate: bookings.tourDate })
+      .from(bookings)
+      .where(and(inPeriod(span), ne(bookings.status, "cancelled"), ...bookingFilters(f))),
+    db
+      .select({ paidAt: payments.paidAt, amount: payments.amount })
+      .from(payments)
+      .innerJoin(bookings, eq(bookings.id, payments.bookingId))
+      .where(and(isNull(payments.voidedAt), gte(payments.paidAt, range.from), lt(payments.paidAt, range.to), ...bookingFilters(f))),
+  ]);
+  const buckets = bucketsFor(span, "month").map((start) => ({ bucket: start, orders: 0, revenue: 0 }));
   const index = new Map(buckets.map((b, i) => [b.bucket, i]));
-  for (const r of rows) {
-    const key = bucketStart(toWib(new Date(r.paidAt)).date, g);
-    const b = buckets[index.get(key) ?? -1];
-    if (!b) continue;
-    b.total += r.amount;
-    b[r.channel] += r.amount;
+  const at = (date: string) => buckets[index.get(bucketStart(date, "month")) ?? -1];
+  for (const o of orders) {
+    const b = at(o.tourDate);
+    if (b) b.orders++;
   }
-  return { granularity: g, buckets };
+  for (const r of paid) {
+    const b = at(toWib(new Date(r.paidAt)).date);
+    if (b) b.revenue += r.amount;
+  }
+  return buckets;
 }
 
 /** BR-11-6 "Penjualan per staf". */
@@ -302,7 +329,7 @@ export async function getStaffSales(p: Period, f: ReportFilters) {
 /** §3.2 tab "Tour Guide". */
 export async function getGuidePerformance(p: Period, f: ReportFilters) {
   const range = instantRange(p);
-  const [util, notice, guideRows, tours, ratings, leaves] = await Promise.all([
+  const [util, notice, guideRows, tours, ratings, leaves, languageRows] = await Promise.all([
     utilisation(p, f),
     noticeCompliance(p, f),
     guidesForPeriod(p, f),
@@ -319,8 +346,8 @@ export async function getGuidePerformance(p: Period, f: ReportFilters) {
       .innerJoin(bookings, eq(bookings.id, feedback.bookingId))
       .where(and(isNotNull(feedback.submittedAt), gte(feedback.submittedAt, range.from), lt(feedback.submittedAt, range.to), ...bookingFilters({ ...f, guideIds: [] }))),
     db.select().from(guideLeaves).where(and(eq(guideLeaves.status, "approved"), lte(guideLeaves.startDate, p.to), gte(guideLeaves.endDate, p.from))),
+    db.select({ id: languages.id, code: languages.code }).from(languages),
   ]);
-  const languageRows = await db.select({ id: languages.id, code: languages.code }).from(languages);
   return guideRows
     .map((g) => {
       const mine = ratings.filter((r) => r.guideId === g.id);

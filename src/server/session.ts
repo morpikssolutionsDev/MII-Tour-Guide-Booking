@@ -28,15 +28,18 @@ const checkSession = cache(async (): Promise<SessionCheck> => {
   const userId = session?.user?.id;
   if (!userId) return { user: null, hadSession: false };
 
-  const row = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  // One round trip: the linked guide profile (role `guide` only) comes with the user row.
+  const [found] = await db
+    .select({ user: users, guideId: guides.id })
+    .from(users)
+    .leftJoin(guides, eq(guides.userId, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
+  const row = found?.user;
   if (!row || !row.isActive) return { user: null, hadSession: true };
   if (Date.parse(row.passwordChangedAt) > (session.issuedAt ?? 0)) return { user: null, hadSession: true };
 
-  let guideId: string | null = null;
-  if (row.role === "guide") {
-    const guide = await db.query.guides.findFirst({ where: eq(guides.userId, row.id), columns: { id: true } });
-    guideId = guide?.id ?? null;
-  }
+  const guideId = row.role === "guide" ? found.guideId : null;
   return {
     user: {
       id: row.id,
